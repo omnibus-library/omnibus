@@ -2,10 +2,11 @@
 //! port: their paths don't collide, so the server's request settings pick between
 //! qBittorrent, Transmission, SABnzbd and NZBGet by kind alone. Searches are answered
 //! from the query (see [`catalogue`]), and a control API under `/_mock` steers what the
-//! fakes report. The fakes are tested through `omnibus-db`'s real clients.
+//! fakes report.
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::Instant;
 
 use axum::Router;
 
@@ -21,6 +22,7 @@ pub mod sabnzbd;
 #[cfg(test)]
 mod test_support;
 pub mod transmission;
+pub mod wire;
 
 use catalogue::Payloads;
 use downloads::Store;
@@ -41,6 +43,7 @@ pub struct Mock {
     store: Mutex<Store>,
 }
 
+/// The handle every handler holds.
 pub type Shared = Arc<Mock>;
 
 impl Mock {
@@ -60,6 +63,13 @@ impl Mock {
     /// The state, locked. A handler that panicked leaves it usable.
     pub fn store(&self) -> MutexGuard<'_, Store> {
         self.store.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// The state, locked and brought up to the clock, for a handler that reports progress.
+    pub fn fresh_store(&self) -> MutexGuard<'_, Store> {
+        let mut store = self.store();
+        store.refresh(Instant::now());
+        store
     }
 }
 

@@ -167,7 +167,7 @@ async fn rank_keeps_the_m4b_of_the_clients_protocol() {
 
         let kept = kept_titles(found, RequestKind::Audiobook, protocol, false);
 
-        assert_eq!(kept.len(), 1, "{protocol:?}");
+        assert_eq!(kept, [format!("Dracula Bram Stoker M4B {protocol:?}")]);
     }
 }
 

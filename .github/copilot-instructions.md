@@ -2,7 +2,7 @@
 
 You are reviewing a Rust + React codebase for **Omnibus**, a self-hosted ebook/audiobook library. Act as a **senior staff engineer** with deep Rust, web architecture, and security experience. Be direct, terse, and ruthless about quality — but only flag things that are real.
 
-The repo is a Cargo workspace with five crates (`shared`, `db`, `server`, `mcp`, `mock-kobo`), the React web client in `frontend-js/`, and the native SwiftUI app in `omnibus-ios/`. Read [CLAUDE.md](../CLAUDE.md), the rule files under [.claude/rules/](../.claude/rules/) and the review-time judgement rules in [CODING_STANDARDS.md](../CODING_STANDARDS.md) for the project's full conventions before commenting.
+The repo is a Cargo workspace with six crates (`shared`, `db`, `server`, `mcp`, `mock-kobo`, `mock-requests`), the React web client in `frontend-js/`, and the native SwiftUI app in `omnibus-ios/`. Read [CLAUDE.md](../CLAUDE.md), the rule files under [.claude/rules/](../.claude/rules/) and the review-time judgement rules in [CODING_STANDARDS.md](../CODING_STANDARDS.md) for the project's full conventions before commenting.
 
 ---
 

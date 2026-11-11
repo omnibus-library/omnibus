@@ -1,3 +1,5 @@
+//! The releases the catalogue makes from a query, and how a finished download's payload is found.
+
 use omnibus_db::requests::clients::infohash;
 
 use super::*;
@@ -27,13 +29,18 @@ fn releases_offers_epub_and_azw3_as_torrent_and_usenet_for_an_ebook() {
             ("Dracula Bram Stoker AZW3", ReleaseProtocol::Usenet),
         ]
     );
+    assert!(found.iter().all(|r| r.category() == 7020));
 }
 
 #[test]
 fn releases_offers_one_m4b_per_protocol_for_an_audiobook() {
     let found = releases("Dracula", RequestKind::Audiobook, counter());
 
-    assert_eq!(found.len(), 2);
+    let protocols: Vec<_> = found.iter().map(|r| r.protocol).collect();
+    assert_eq!(
+        protocols,
+        [ReleaseProtocol::Torrent, ReleaseProtocol::Usenet]
+    );
     assert!(found
         .iter()
         .all(|r| r.format == Format::M4b && r.category() == 3030));
@@ -113,4 +120,28 @@ fn magnet_hash_reads_the_hash_a_release_link_carries() {
     assert_eq!(hash, Some(found[0].id.clone()));
     assert_eq!(magnet_hash("magnet:?xt=urn:btih:short"), None);
     assert_eq!(magnet_hash("http://x"), None);
+}
+
+#[test]
+fn magnet_hash_lowercases_an_uppercase_hash() {
+    let upper = "ABCDEF0123456789ABCDEF0123456789ABCDEF01";
+
+    let hash = magnet_hash(&format!("magnet:?xt=urn:btih:{upper}&dn=x"));
+
+    assert_eq!(hash, Some(upper.to_ascii_lowercase()));
+}
+
+#[test]
+fn is_id_accepts_forty_lowercase_hex_only() {
+    let hex = "0123456789abcdef0123456789abcdef01234567";
+
+    assert!(is_id(hex));
+    for bad in [
+        &hex[1..],
+        &hex.to_uppercase(),
+        "",
+        "g123456789abcdef0123456789abcdef01234567",
+    ] {
+        assert!(!is_id(bad), "{bad}");
+    }
 }

@@ -6,11 +6,13 @@ use std::time::Instant;
 use axum::extract::State;
 use axum::routing::{get, put};
 use axum::{Json, Router};
+use omnibus_shared::DownloadClientKind;
 use serde::{Deserialize, Serialize};
 
-use crate::downloads::{Client, Outcome, SearchMode};
+use crate::downloads::{Outcome, SearchMode};
 use crate::Shared;
 
+/// The `/_mock` routes.
 pub fn routes() -> Router<Shared> {
     Router::new()
         .route("/_mock", get(view))
@@ -29,7 +31,7 @@ struct View {
 #[derive(Serialize)]
 struct Row {
     id: String,
-    client: Client,
+    client: DownloadClientKind,
     progress: f64,
     outcome: Outcome,
 }
@@ -48,8 +50,7 @@ struct DownloadsBody {
 }
 
 async fn view(State(mock): State<Shared>) -> Json<View> {
-    let mut store = mock.store();
-    store.refresh(Instant::now());
+    let store = mock.fresh_store();
     Json(View {
         search: store.search,
         outcome: store.outcome,

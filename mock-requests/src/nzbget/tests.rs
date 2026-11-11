@@ -8,22 +8,13 @@ use omnibus_db::requests::clients::{ClientFile, DownloadClient, Nzbget};
 use omnibus_shared::ReleaseProtocol;
 use serde_json::{json, Value};
 
-use crate::test_support::{control, found, spawn, Running, EPUB_BYTES};
+use crate::test_support::{add_epub, control, found, nzb_bytes, spawn, Running, EPUB_BYTES};
 use crate::{CLIENT_PASSWORD, CLIENT_USERNAME};
 
 fn client(mock: &Running) -> Nzbget {
     Nzbget::new(&mock.origin, CLIENT_USERNAME, CLIENT_PASSWORD)
         .unwrap()
         .with_folders(JobFolders::default())
-}
-
-/// Hands the client the usenet EPUB and returns its job id and the release's own id.
-async fn add_epub(mock: &Running) -> (String, String) {
-    let release = found(mock, ReleaseProtocol::Usenet, "EPUB").await;
-    let prepared = client(mock).prepare(&release.link).await.unwrap();
-    let hash = prepared.hash.clone();
-    client(mock).add(prepared, "").await.unwrap();
-    (hash, release.guid)
 }
 
 async fn rpc(mock: &Running, method: &str, params: Value) -> Value {
@@ -65,7 +56,7 @@ async fn test_succeeds_for_the_version_call() {
 async fn status_reads_downloading_before_the_download_is_done() {
     let mock = spawn().await;
 
-    let (hash, _) = add_epub(&mock).await;
+    let (hash, _) = add_epub(&mock, &client(&mock), ReleaseProtocol::Usenet).await;
 
     let status = client(&mock).status(&hash).await.unwrap().unwrap();
     assert_eq!(status.state, "downloading");
@@ -77,7 +68,7 @@ async fn status_and_files_read_the_job_folder_once_the_download_is_done() {
     let mock = spawn().await;
     control(&mock, "/_mock/downloads", json!({"secs": 0})).await;
 
-    let (hash, release) = add_epub(&mock).await;
+    let (hash, release) = add_epub(&mock, &client(&mock), ReleaseProtocol::Usenet).await;
 
     let status = client(&mock).status(&hash).await.unwrap().unwrap();
     assert_eq!(status.state, "stoppedUP");
@@ -100,7 +91,7 @@ async fn status_reads_error_when_downloads_are_set_to_fail() {
     let mock = spawn().await;
     control(&mock, "/_mock/downloads", json!({"outcome": "fail"})).await;
 
-    let (hash, _) = add_epub(&mock).await;
+    let (hash, _) = add_epub(&mock, &client(&mock), ReleaseProtocol::Usenet).await;
 
     assert_eq!(
         client(&mock).status(&hash).await.unwrap().unwrap().state,
@@ -113,7 +104,7 @@ async fn status_holds_the_job_in_the_queue_when_downloads_stall() {
     let mock = spawn().await;
     control(&mock, "/_mock/downloads", json!({"outcome": "stall"})).await;
 
-    let (hash, _) = add_epub(&mock).await;
+    let (hash, _) = add_epub(&mock, &client(&mock), ReleaseProtocol::Usenet).await;
 
     let status = client(&mock).status(&hash).await.unwrap().unwrap();
     assert_eq!(status.state, "downloading");
@@ -130,7 +121,7 @@ async fn files_lists_only_a_readme_when_downloads_are_set_to_junk() {
     )
     .await;
 
-    let (hash, _) = add_epub(&mock).await;
+    let (hash, _) = add_epub(&mock, &client(&mock), ReleaseProtocol::Usenet).await;
 
     let names: Vec<_> = client(&mock)
         .files(&hash)
@@ -146,8 +137,9 @@ async fn files_lists_only_a_readme_when_downloads_are_set_to_junk() {
 async fn remove_deletes_a_finished_job_and_its_folder() {
     let mock = spawn().await;
     control(&mock, "/_mock/downloads", json!({"secs": 0})).await;
-    let (hash, _) = add_epub(&mock).await;
+    let (hash, _) = add_epub(&mock, &client(&mock), ReleaseProtocol::Usenet).await;
     client(&mock).status(&hash).await.unwrap();
+    assert!(mock.downloads.join(format!("omnibus-{hash}")).exists());
 
     client(&mock).remove(&hash, true).await.unwrap();
 
@@ -159,7 +151,7 @@ async fn remove_deletes_a_finished_job_and_its_folder() {
 #[tokio::test]
 async fn remove_cancels_a_job_still_in_the_queue() {
     let mock = spawn().await;
-    let (hash, _) = add_epub(&mock).await;
+    let (hash, _) = add_epub(&mock, &client(&mock), ReleaseProtocol::Usenet).await;
 
     client(&mock).remove(&hash, true).await.unwrap();
 
@@ -180,12 +172,7 @@ async fn append_answers_an_error_for_an_nzb_it_never_offered() {
 async fn append_refuses_a_job_name_that_could_be_a_path() {
     let mock = spawn().await;
     let release = found(&mock, ReleaseProtocol::Usenet, "EPUB").await;
-    let nzb = reqwest::get(&release.link)
-        .await
-        .unwrap()
-        .bytes()
-        .await
-        .unwrap();
+    let nzb = nzb_bytes(&release).await;
 
     let reply = append(&mock, "../escape.nzb", &nzb).await;
 
@@ -196,12 +183,7 @@ async fn append_refuses_a_job_name_that_could_be_a_path() {
 async fn append_answers_a_positive_job_id_for_a_valid_nzb() {
     let mock = spawn().await;
     let release = found(&mock, ReleaseProtocol::Usenet, "EPUB").await;
-    let nzb = reqwest::get(&release.link)
-        .await
-        .unwrap()
-        .bytes()
-        .await
-        .unwrap();
+    let nzb = nzb_bytes(&release).await;
 
     let reply = append(&mock, &format!("omnibus-{}.nzb", release.guid), &nzb).await;
 

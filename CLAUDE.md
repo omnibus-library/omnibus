@@ -58,7 +58,7 @@ Do not use Chrome DevTools MCP or Claude in Chrome for routine agent verificatio
 
 ## Architecture
 
-Five-crate Cargo workspace: `shared/` (serde wire types), `db/` (data layer + indexer), `server/` (the `omnibus` axum binary: the REST router, the device-sync routes, and the React build served at `/` from `OMNIBUS_REACT_DIR`), `mcp/` (MCP tool layer speaking the `/api/*` REST surface — a stdio binary plus the library `server/` mounts at the hosted `/mcp` endpoint behind an admin toggle; out of default-members), `mock-kobo/` (a fake Kobo e-reader that syncs against the Kobo routes to reproduce firmware-side bugs; dev tooling, also out of default-members).
+Six-crate Cargo workspace: `shared/` (serde wire types), `db/` (data layer + indexer), `server/` (the `omnibus` axum binary: the REST router, the device-sync routes, and the React build served at `/` from `OMNIBUS_REACT_DIR`), `mcp/` (MCP tool layer speaking the `/api/*` REST surface — a stdio binary plus the library `server/` mounts at the hosted `/mcp` endpoint behind an admin toggle; out of default-members), `mock-kobo/` (a fake Kobo e-reader that syncs against the Kobo routes to reproduce firmware-side bugs; dev tooling, also out of default-members), `mock-requests/` (a fake Prowlarr plus fake qBittorrent, Transmission, SABnzbd and NZBGet on one loopback port, so a book request runs end to end without real services; dev tooling, also out of default-members — [docs/mock-requests.md](docs/mock-requests.md)).
 
 The web client is `frontend-js/`, a React SPA (Vite + pnpm) whose API client is generated from the OpenAPI document; its own checks are biome, tsc and vitest (unit + Storybook), run by `frontend-js.yml`.
 
@@ -103,6 +103,7 @@ just dev-up
 just dev-bounce                                             # restart it — after any Rust change or a new migration
 source .claude/runtime/env.sh                               # picks up OMNIBUS_PORT + PLAYWRIGHT_BASE_URL
 just kobo                                                   # mock Kobo e-reader in a terminal UI against any instance (sync URL; `--local` for this worktree's dev server) (docs/kobo.md)
+just mock-requests --local                                 # fake Prowlarr + download clients wired to this worktree's dev server for book requests (needs OMNIBUS_BOOK_REQUESTS=1; docs/mock-requests.md)
 just koreader                                              # interactive KOReader in a browser tab (Docker) against any instance (plugin zip; `--local` for this worktree's dev server) (docs/koreader.md)
 
 # Server by hand: binds $IP:$PORT (127.0.0.1:8080 unset); serves the React
@@ -111,9 +112,9 @@ pnpm --dir frontend-js install && pnpm --dir frontend-js run build
 OMNIBUS_REACT_DIR=frontend-js/dist cargo run -p omnibus
 
 # Tests & lint — aggregate targets cover the full crate matrix in one go
-just test                                                   # Rust suites (db + server + shared + mcp + mock-kobo), then the script suites
+just test                                                   # Rust suites (db + server + shared + mcp + mock-kobo + mock-requests), then the script suites
 just test-rust                                              # the Rust suites alone
-just lint                                                   # cargo fmt --check + clippy -D warnings (default members + mcp + mock-kobo) + stylelint + migration numbers vs origin/main
+just lint                                                   # cargo fmt --check + clippy -D warnings (default members + mcp + mock-kobo + mock-requests) + stylelint + migration numbers vs origin/main
 just lint-css                                               # structural CSS lint only (stylelint; catches unclosed rules and duplicate selectors in frontend-js/src and public)
 just lint-ts                                                # Playwright TS: biome check + tsc --noEmit (TypeScript 7), in .#e2e
 just check                                                  # lint then test
@@ -127,6 +128,7 @@ cargo test -p omnibus-db                                    # db + scanner + syn
 cargo test -p omnibus-shared                                # shared serde / ebook / progress tests
 cargo test -p omnibus-mcp                                   # MCP tool-layer tests (crate is out of default-members)
 cargo test -p omnibus-mock-kobo                             # fake Kobo firmware tests (crate is out of default-members)
+cargo nextest run -p omnibus-mock-requests                  # fake Prowlarr / download client tests (crate is out of default-members; nextest, not cargo test)
 cargo clippy                                                # lint default-members (server, shared)
 cargo fmt                                                   # format all crates
 

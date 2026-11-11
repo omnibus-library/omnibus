@@ -7,22 +7,13 @@ use omnibus_db::requests::ConnectionError;
 use omnibus_shared::ReleaseProtocol;
 use serde_json::{json, Value};
 
-use crate::test_support::{control, found, spawn, Running, EPUB_BYTES};
+use crate::test_support::{add_epub, control, spawn, Running, EPUB_BYTES};
 use crate::{CLIENT_PASSWORD, CLIENT_USERNAME};
 
 const SESSION: &str = "x-transmission-session-id";
 
 fn client(mock: &Running) -> Transmission {
     Transmission::new(&mock.origin, CLIENT_USERNAME, CLIENT_PASSWORD).unwrap()
-}
-
-/// Hands the client the torrent EPUB and returns its hash.
-async fn add_epub(mock: &Running) -> String {
-    let link = found(mock, ReleaseProtocol::Torrent, "EPUB").await.link;
-    let prepared = client(mock).prepare(&link).await.unwrap();
-    let hash = prepared.hash.clone();
-    client(mock).add(prepared, "").await.unwrap();
-    hash
 }
 
 async fn rpc(mock: &Running, session: Option<&str>, body: Value) -> reqwest::Response {
@@ -36,7 +27,7 @@ async fn rpc(mock: &Running, session: Option<&str>, body: Value) -> reqwest::Res
 }
 
 #[tokio::test]
-async fn a_call_without_the_session_id_is_answered_409_carrying_it() {
+async fn rpc_answers_409_carrying_the_session_id_when_a_call_lacks_it() {
     let mock = spawn().await;
 
     let refused = rpc(&mock, None, json!({"method": "session-get"})).await;
@@ -58,7 +49,7 @@ async fn test_succeeds_after_the_session_handshake() {
 async fn status_reads_downloading_before_the_download_is_done() {
     let mock = spawn().await;
 
-    let hash = add_epub(&mock).await;
+    let (hash, _) = add_epub(&mock, &client(&mock), ReleaseProtocol::Torrent).await;
 
     let status = client(&mock).status(&hash).await.unwrap().unwrap();
     assert_eq!(status.state, "downloading");
@@ -72,7 +63,7 @@ async fn status_files_and_disk_agree_once_the_download_is_done() {
     let mock = spawn().await;
     control(&mock, "/_mock/downloads", json!({"secs": 0})).await;
 
-    let hash = add_epub(&mock).await;
+    let (hash, _) = add_epub(&mock, &client(&mock), ReleaseProtocol::Torrent).await;
 
     let status = client(&mock).status(&hash).await.unwrap().unwrap();
     assert_eq!(status.state, "uploading");
@@ -95,7 +86,7 @@ async fn status_reads_error_when_downloads_are_set_to_fail() {
     let mock = spawn().await;
     control(&mock, "/_mock/downloads", json!({"outcome": "fail"})).await;
 
-    let hash = add_epub(&mock).await;
+    let (hash, _) = add_epub(&mock, &client(&mock), ReleaseProtocol::Torrent).await;
 
     assert_eq!(
         client(&mock).status(&hash).await.unwrap().unwrap().state,
@@ -108,7 +99,7 @@ async fn status_holds_the_bar_short_of_full_when_downloads_stall() {
     let mock = spawn().await;
     control(&mock, "/_mock/downloads", json!({"outcome": "stall"})).await;
 
-    let hash = add_epub(&mock).await;
+    let (hash, _) = add_epub(&mock, &client(&mock), ReleaseProtocol::Torrent).await;
 
     let status = client(&mock).status(&hash).await.unwrap().unwrap();
     assert_eq!(status.state, "downloading");
@@ -120,8 +111,9 @@ async fn status_holds_the_bar_short_of_full_when_downloads_stall() {
 async fn remove_deletes_the_download_and_its_folder() {
     let mock = spawn().await;
     control(&mock, "/_mock/downloads", json!({"secs": 0})).await;
-    let hash = add_epub(&mock).await;
+    let (hash, _) = add_epub(&mock, &client(&mock), ReleaseProtocol::Torrent).await;
     client(&mock).status(&hash).await.unwrap();
+    assert!(mock.downloads.join(format!("transmission-{hash}")).exists());
 
     client(&mock).remove(&hash, true).await.unwrap();
 

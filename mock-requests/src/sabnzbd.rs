@@ -9,25 +9,26 @@ use std::time::Instant;
 use axum::extract::{Multipart, Query, State};
 use axum::routing::get;
 use axum::{Json, Router};
-use omnibus_shared::ReleaseProtocol;
+use omnibus_shared::DownloadClientKind;
 use serde_json::{json, Value};
 
-use crate::downloads::{Client, Download, Store};
-use crate::nzb::{job_name_ok, release_id};
+use crate::downloads::{Download, Store};
 use crate::Shared;
 
 const NZO_PREFIX: &str = "SABnzbd_nzo_";
 
+const KIND: DownloadClientKind = DownloadClientKind::Sabnzbd;
+
 type Params = Query<HashMap<String, String>>;
 
+/// The one `/api` route, which reads and adds by `mode`.
 pub fn routes() -> Router<Shared> {
     Router::new().route("/api", get(read).post(addfile))
 }
 
 /// `mode=queue`, `mode=history`, and deleting from either.
 async fn read(State(mock): State<Shared>, Query(params): Params) -> Json<Value> {
-    let mut store = mock.store();
-    store.refresh(Instant::now());
+    let mut store = mock.fresh_store();
     let param = |name: &str| params.get(name).map(String::as_str);
     let mode = param("mode").unwrap_or_default();
     if param("name") == Some("delete") {
@@ -43,7 +44,7 @@ async fn read(State(mock): State<Shared>, Query(params): Params) -> Json<Value> 
 
 fn queue(store: &Store) -> Vec<Value> {
     store
-        .of(Client::Sabnzbd)
+        .of(KIND)
         .filter(|d| !d.ended())
         .map(|d| {
             json!({
@@ -59,7 +60,7 @@ fn queue(store: &Store) -> Vec<Value> {
 
 fn history(store: &Store) -> Vec<Value> {
     store
-        .of(Client::Sabnzbd)
+        .of(KIND)
         .filter(|d| d.ended())
         .map(|d| {
             json!({
@@ -80,14 +81,8 @@ fn remove(store: &mut Store, nzo_id: Option<&str>, delete_files: bool) {
     let num = nzo_id
         .and_then(|v| v.strip_prefix(NZO_PREFIX))
         .and_then(|n| n.parse::<u64>().ok());
-    let id = num.and_then(|n| {
-        store
-            .of(Client::Sabnzbd)
-            .find(|d| d.num == n)
-            .map(|d| d.id.clone())
-    });
-    if let Some(id) = id {
-        store.remove(Client::Sabnzbd, &id, delete_files);
+    if let Some(num) = num {
+        store.remove_num(KIND, num, delete_files);
     }
 }
 
@@ -97,35 +92,21 @@ async fn addfile(
     Query(params): Params,
     mut upload: Multipart,
 ) -> Json<Value> {
-    let refused = |why: &str| Json(json!({"status": false, "error": why}));
     let name = params
         .get("nzbname")
         .map(String::as_str)
         .unwrap_or_default();
-    if !job_name_ok(name) {
-        return refused("the job name is not one Omnibus gives");
-    }
     let mut nzb = Vec::new();
     while let Ok(Some(field)) = upload.next_field().await {
         if field.name() == Some("name") {
             nzb = field.bytes().await.map(|b| b.to_vec()).unwrap_or_default();
         }
     }
-    let mut store = mock.store();
-    let release = release_id(&nzb)
-        .and_then(|id| store.release(&id).cloned())
-        .filter(|r| r.protocol == ReleaseProtocol::Usenet);
-    let Some(release) = release else {
-        return refused("this NZB is not one the mock offered");
-    };
-    let num = store.add(
-        Client::Sabnzbd,
-        name.to_string(),
-        release,
-        name.to_string(),
-        Instant::now(),
-    );
-    Json(json!({"status": true, "nzo_ids": [format!("{NZO_PREFIX}{num}")]}))
+    let added = mock.store().add_usenet(KIND, name, &nzb, Instant::now());
+    Json(match added {
+        Ok(num) => json!({"status": true, "nzo_ids": [format!("{NZO_PREFIX}{num}")]}),
+        Err(why) => json!({"status": false, "error": why.to_string()}),
+    })
 }
 
 #[cfg(test)]

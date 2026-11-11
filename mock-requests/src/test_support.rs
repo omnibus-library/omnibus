@@ -4,6 +4,7 @@
 use std::fs;
 use std::path::PathBuf;
 
+use omnibus_db::requests::clients::DownloadClient;
 use omnibus_db::requests::prowlarr::{Prowlarr, ProwlarrRelease};
 use omnibus_shared::{ReleaseProtocol, RequestKind};
 use serde_json::Value;
@@ -12,11 +13,14 @@ use tempfile::TempDir;
 use crate::catalogue::Payloads;
 use crate::{router, Mock, PROWLARR_API_KEY};
 
+/// What the EPUB payload holds.
 pub const EPUB_BYTES: &[u8] = b"mock epub payload";
+/// What the M4B payload holds.
 pub const M4B_BYTES: &[u8] = b"mock m4b payload";
 
 /// A running mock and the temp dirs it works in; both go when this drops.
 pub struct Running {
+    /// The mock's address, such as `http://127.0.0.1:8123`.
     pub origin: String,
     /// The canonical folder finished downloads land in.
     pub downloads: PathBuf,
@@ -25,10 +29,6 @@ pub struct Running {
 
 /// A mock whose downloads take the default 30 seconds.
 pub async fn spawn() -> Running {
-    spawn_taking(30).await
-}
-
-pub async fn spawn_taking(download_secs: u64) -> Running {
     let downloads_dir = tempfile::tempdir().unwrap();
     let payload_dir = tempfile::tempdir().unwrap();
     let payloads = Payloads {
@@ -40,7 +40,7 @@ pub async fn spawn_taking(download_secs: u64) -> Running {
     let downloads = downloads_dir.path().canonicalize().unwrap();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let origin = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
-    let mock = Mock::new(origin.clone(), downloads.clone(), payloads, download_secs);
+    let mock = Mock::new(origin.clone(), downloads.clone(), payloads, 30);
     let app = router(mock);
     tokio::spawn(async move { axum::serve(listener, app).await });
     Running {
@@ -65,13 +65,37 @@ pub async fn found(mock: &Running, protocol: ReleaseProtocol, format: &str) -> P
         .unwrap()
 }
 
-/// `PUT` a control-API `body` to `path`, expecting success.
-pub async fn control(mock: &Running, path: &str, body: Value) {
-    let reply = reqwest::Client::new()
+/// `PUT` a control-API `body` to `path` and return the reply, whatever its status.
+pub async fn control_reply(mock: &Running, path: &str, body: Value) -> reqwest::Response {
+    reqwest::Client::new()
         .put(format!("{}{path}", mock.origin))
         .json(&body)
         .send()
         .await
-        .unwrap();
+        .unwrap()
+}
+
+/// [`control_reply`] for a setup step, which must succeed or the test proves nothing.
+pub async fn control(mock: &Running, path: &str, body: Value) {
+    let reply = control_reply(mock, path, body).await;
     assert!(reply.status().is_success(), "{path}: {}", reply.status());
+}
+
+/// Hands `client` the EPUB of `protocol` and returns its job id and the release's own id.
+pub async fn add_epub(
+    mock: &Running,
+    client: &impl DownloadClient,
+    protocol: ReleaseProtocol,
+) -> (String, String) {
+    let release = found(mock, protocol, "EPUB").await;
+    let prepared = client.prepare(&release.link).await.unwrap();
+    let hash = prepared.hash.clone();
+    client.add(prepared, "").await.unwrap();
+    (hash, release.guid)
+}
+
+/// The NZB the mock serves for a usenet `release`, as the server would fetch it.
+pub async fn nzb_bytes(release: &ProwlarrRelease) -> Vec<u8> {
+    let reply = reqwest::get(&release.link).await.unwrap();
+    reply.bytes().await.unwrap().to_vec()
 }

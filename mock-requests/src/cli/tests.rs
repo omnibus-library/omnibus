@@ -1,3 +1,5 @@
+//! The command line: its defaults, each flag, and what it refuses.
+
 use super::*;
 
 fn parse_all(args: &[&str]) -> Result<Command, CliError> {
@@ -77,5 +79,14 @@ fn parse_refuses_what_it_cannot_use() {
             matches!(parse_all(args), Err(CliError::Usage(_))),
             "{args:?} was accepted"
         );
+    }
+}
+
+#[test]
+fn parse_accepts_each_download_client_kind() {
+    for kind in ["qbittorrent", "transmission", "sabnzbd", "nzbget"] {
+        let args = run(&["--local", "--client", kind]);
+
+        assert_eq!(args.client.as_str(), kind);
     }
 }

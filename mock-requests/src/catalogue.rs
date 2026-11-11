@@ -9,10 +9,10 @@ use std::path::{Path, PathBuf};
 use omnibus_shared::{ReleaseProtocol, RequestKind};
 
 /// Newznab category an ebook search asks for.
-pub const EBOOK_CATEGORY: &str = "7020";
+pub const EBOOK_CATEGORY: i64 = 7020;
 
 /// Newznab category an audiobook search asks for.
-pub const AUDIOBOOK_CATEGORY: &str = "3030";
+pub const AUDIOBOOK_CATEGORY: i64 = 3030;
 
 /// A release's file format.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -40,7 +40,8 @@ impl Format {
         }
     }
 
-    fn size_bytes(self) -> i64 {
+    /// The size a release in this format reports.
+    pub fn size_bytes(self) -> i64 {
         match self {
             Format::Epub => 1_500_000,
             Format::Azw3 => 1_200_000,
@@ -52,10 +53,13 @@ impl Format {
 /// One search result. Its id is 40 lowercase hex, and doubles as a torrent's info hash.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Release {
+    /// Also the torrent's info hash and the NZB's marker.
     pub id: String,
+    /// The query and the format's label, such as `Dracula EPUB`.
     pub title: String,
-    pub kind: RequestKind,
+    /// The file format the title names.
     pub format: Format,
+    /// Whether a torrent client or a usenet client takes it.
     pub protocol: ReleaseProtocol,
 }
 
@@ -72,15 +76,11 @@ impl Release {
         }
     }
 
-    pub fn size_bytes(&self) -> i64 {
-        self.format.size_bytes()
-    }
-
     /// The Newznab category Prowlarr lists it under.
     pub fn category(&self) -> i64 {
-        match self.kind {
-            RequestKind::Ebook => 7020,
-            RequestKind::Audiobook => 3030,
+        match self.format {
+            Format::Epub | Format::Azw3 => EBOOK_CATEGORY,
+            Format::M4b => AUDIOBOOK_CATEGORY,
         }
     }
 }
@@ -97,17 +97,20 @@ fn percent_encode(text: &str) -> String {
 /// The 40-hex info hash a magnet names, lowercased.
 pub fn magnet_hash(magnet: &str) -> Option<String> {
     let rest = magnet.split("urn:btih:").nth(1)?;
-    let hash = rest.get(..40)?;
-    hash.bytes()
-        .all(|b| b.is_ascii_hexdigit())
-        .then(|| hash.to_ascii_lowercase())
+    let hash = rest.get(..40)?.to_ascii_lowercase();
+    is_id(&hash).then_some(hash)
+}
+
+/// Whether `text` is a release id: 40 lowercase hex.
+pub fn is_id(text: &str) -> bool {
+    text.len() == 40 && text.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 /// The kind of book a Prowlarr `categories` value searches for.
 pub fn kind_for_category(category: &str) -> Option<RequestKind> {
-    match category {
-        EBOOK_CATEGORY => Some(RequestKind::Ebook),
-        AUDIOBOOK_CATEGORY => Some(RequestKind::Audiobook),
+    match category.parse() {
+        Ok(EBOOK_CATEGORY) => Some(RequestKind::Ebook),
+        Ok(AUDIOBOOK_CATEGORY) => Some(RequestKind::Audiobook),
         _ => None,
     }
 }
@@ -124,7 +127,6 @@ pub fn releases(query: &str, kind: RequestKind, mut mint: impl FnMut() -> String
             out.push(Release {
                 id: mint(),
                 title: format!("{query} {}", format.label()),
-                kind,
                 format: *format,
                 protocol,
             });
@@ -143,7 +145,9 @@ pub enum PayloadError {
 /// The files a finished download delivers: an EPUB for either ebook format, an M4B for audiobooks.
 #[derive(Clone, Debug)]
 pub struct Payloads {
+    /// Delivered for an EPUB or AZW3 release.
     pub epub: PathBuf,
+    /// Delivered for an audiobook release.
     pub m4b: PathBuf,
 }
 
@@ -164,6 +168,7 @@ impl Payloads {
     }
 
     /// The file delivering `format`.
+    // shortcut: AZW3 delivers the EPUB's bytes, so the import never converts; ship a real AZW3 to exercise conversion.
     pub fn file(&self, format: Format) -> &Path {
         match format {
             Format::Epub | Format::Azw3 => &self.epub,

@@ -4,6 +4,9 @@ use std::path::PathBuf;
 
 use omnibus_shared::DownloadClientKind;
 
+/// Where `just dev-up` publishes this worktree's dev-server port.
+pub const RUNTIME_DIR: &str = ".claude/runtime";
+
 /// The text `--help` prints.
 pub const USAGE: &str = "\
 mock-requests: a fake Prowlarr and fake download clients for Omnibus book requests
@@ -46,11 +49,17 @@ pub enum Target {
 /// The options after flags and defaults are merged.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Args {
+    /// The loopback port, 0 for any free one.
     pub port: u16,
+    /// Where finished downloads are written.
     pub downloads: PathBuf,
+    /// Where the payload files are found.
     pub test_data: PathBuf,
+    /// Seconds a download takes.
     pub download_secs: u64,
+    /// The Omnibus to wire, if any.
     pub target: Option<Target>,
+    /// The download client to wire.
     pub client: DownloadClientKind,
 }
 
@@ -118,14 +127,12 @@ fn number<T: std::str::FromStr>(flag: &str, value: &str) -> Result<T, CliError> 
 }
 
 fn client(value: &str) -> Result<DownloadClientKind, CliError> {
-    ["qbittorrent", "transmission", "sabnzbd", "nzbget"]
-        .contains(&value)
-        .then(|| DownloadClientKind::from_str_or_default(value))
-        .ok_or_else(|| {
-            usage(format!(
-                "--client must be qbittorrent, transmission, sabnzbd or nzbget, not {value}"
-            ))
-        })
+    let kind = DownloadClientKind::from_str_or_default(value);
+    (kind.as_str() == value).then_some(kind).ok_or_else(|| {
+        usage(format!(
+            "--client must be qbittorrent, transmission, sabnzbd or nzbget, not {value}"
+        ))
+    })
 }
 
 #[cfg(test)]
