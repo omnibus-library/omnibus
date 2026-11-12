@@ -359,3 +359,223 @@ struct NotificationsModelTests {
         #expect(sheet.testState == .idle)
     }
 }
+
+/// Counts a fake's calls, and can be read without counting one.
+actor Calls {
+    private(set) var count = 0
+
+    func next() -> Int {
+        count += 1
+        return count
+    }
+}
+
+private let notFound = APIError.http(status: 404, message: "no such notification connection")
+
+/// What the screen does with a read, a write and a 404 that cross.
+@MainActor
+struct NotificationsRaceTests {
+    // MARK: - Loading
+
+    @Test func aCancelledLoadIsNotAFailureAndTheNextLoadReads() async throws {
+        let calls = Calls()
+        let saved = try savedConnections()
+        let model = NotificationsModel(api: fakeNotificationsAPI(
+            publicURL: { noneStatus },
+            connections: {
+                if await calls.next() == 1 { throw CancellationError() }
+                return list(saved)
+            }
+        ))
+        await model.load()
+        #expect(model.failure == nil)
+        #expect(!model.isLoaded)
+        await model.load()
+        #expect(model.isLoaded)
+    }
+
+    @Test func aFirstRead404SaysTheServerHasNoNotifications() async {
+        let model = NotificationsModel(api: fakeNotificationsAPI(publicURL: { throw notFound }, connections: { throw notFound }))
+        await model.load()
+        #expect(model.failure?.contains("aren\u{2019}t available on this server") == true)
+        #expect(model.failure?.contains("Pull down") == false)
+    }
+
+    /// A model whose second connections read waits on `gate` and answers `stale`,
+    /// and whose later reads answer `fresh`.
+    private func racingModel(
+        stale: [NotificationConnection], fresh: [NotificationConnection], gate: Gate, calls: Calls,
+        configure: (inout NotificationsAPI) -> Void
+    ) -> NotificationsModel {
+        var api = fakeNotificationsAPI(
+            publicURL: { noneStatus },
+            connections: {
+                switch await calls.next() {
+                case 1: return list(stale)
+                case 2:
+                    await gate.wait()
+                    return list(stale)
+                default: return list(fresh)
+                }
+            }
+        )
+        configure(&api)
+        return NotificationsModel(api: api)
+    }
+
+    @Test func aRefreshOutWhenASwitchLandsIsReadAgainRatherThanUndoIt() async throws {
+        let saved = try savedConnections()
+        let off: [NotificationConnection] = {
+            var turned = saved
+            turned[0].enabled = false
+            return turned
+        }()
+        let gate = Gate()
+        let calls = Calls()
+        let model = racingModel(stale: saved, fresh: off, gate: gate, calls: calls) { api in
+            api.update = { _, _ in off[0] }
+        }
+        await model.load()
+        let refresh = Task { await model.load() }
+        while await calls.count < 2 { await Task.yield() }
+
+        await model.setEnabled(saved[0], false)
+        #expect(model.connections[0].enabled == false)
+        await gate.open()
+        await refresh.value
+        #expect(model.connections[0].enabled == false)
+        #expect(await calls.count == 3)
+    }
+
+    @Test func aRefreshOutWhenADeleteLandsDoesNotBringTheRowBack() async throws {
+        let saved = try savedConnections()
+        let gate = Gate()
+        let calls = Calls()
+        let model = racingModel(stale: saved, fresh: Array(saved.dropFirst()), gate: gate, calls: calls) { api in
+            api.delete = { _ in }
+        }
+        await model.load()
+        let refresh = Task { await model.load() }
+        while await calls.count < 2 { await Task.yield() }
+
+        #expect(await model.delete(id: 1) == nil)
+        await gate.open()
+        await refresh.value
+        #expect(!model.connections.contains { $0.id == 1 })
+    }
+
+    @Test func aSwitchAnsweringAfterItsRowWasDeletedLeavesNoGhost() async throws {
+        let saved = try savedConnections()
+        let gate = Gate()
+        let model = await loadedModel(connections: saved) { api in
+            var api = api
+            api.update = { _, _ in
+                await gate.wait()
+                return saved[0]
+            }
+            api.delete = { _ in }
+            return api
+        }
+        let toggle = Task { await model.setEnabled(saved[0], false) }
+        #expect(await eventually { model.toggling.contains(1) })
+        #expect(await model.delete(id: 1) == nil)
+        await gate.open()
+        await toggle.value
+        #expect(!model.connections.contains { $0.id == 1 })
+        #expect(model.toggling.isEmpty)
+    }
+
+    // MARK: - Once at a time
+
+    @Test func aSecondSwitchWhileOneIsOutSendsNothing() async throws {
+        let saved = try savedConnections()
+        let gate = Gate()
+        let calls = Calls()
+        let model = await loadedModel(connections: saved) { api in
+            var api = api
+            api.update = { _, input in
+                _ = await calls.next()
+                await gate.wait()
+                var answer = saved[0]
+                answer.enabled = input.enabled
+                return answer
+            }
+            return api
+        }
+        let first = Task { await model.setEnabled(saved[0], false) }
+        #expect(await eventually { model.toggling.contains(1) })
+        await model.setEnabled(saved[0], true)
+        await gate.open()
+        await first.value
+        #expect(await calls.count == 1)
+        #expect(model.connections[0].enabled == false)
+    }
+
+    @Test func aSecondSaveWhileOneIsOutSendsNothing() async throws {
+        let saved = try savedConnections()
+        let gate = Gate()
+        let calls = Calls()
+        var draft = NtfyDraft(offering: [])
+        draft.name = "Phone"
+        draft.serverURL = "https://ntfy.sh"
+        draft.topic = "t"
+        let sheet = NtfySheetModel(draft: draft, api: fakeNotificationsAPI(create: { _ in
+            _ = await calls.next()
+            await gate.wait()
+            return saved[2]
+        }))
+        let first = Task { await sheet.save() }
+        #expect(await eventually { sheet.isSaving })
+        #expect(await sheet.save() == nil)
+        await gate.open()
+        #expect(await first.value == saved[2])
+        #expect(await calls.count == 1)
+    }
+
+    // MARK: - Deleted elsewhere
+
+    @Test func aSwitchThatFindsItsRowGoneRemovesItAndSaysSo() async throws {
+        let saved = try savedConnections()
+        let model = await loadedModel(connections: saved) { api in
+            var api = api
+            api.update = { _, _ in throw notFound }
+            return api
+        }
+        await model.setEnabled(saved[0], false)
+        #expect(!model.connections.contains { $0.id == 1 })
+        #expect(model.listNotice == "That connection was deleted elsewhere.")
+        #expect(model.rowErrors[1] == nil)
+    }
+
+    @Test func aDeleteThatFindsTheRowGoneCountsAsDeleted() async throws {
+        let saved = try savedConnections()
+        let model = await loadedModel(connections: saved) { api in
+            var api = api
+            api.delete = { _ in throw notFound }
+            return api
+        }
+        #expect(await model.delete(id: 2) == nil)
+        #expect(model.connections.map(\.id) == [1, 3, 4])
+    }
+
+    @Test func aSaveThatFindsTheConnectionGoneSaysSoAndStops() async throws {
+        let draft = try #require(NtfyDraft(editing: try savedConnections()[0]))
+        let sheet = NtfySheetModel(draft: draft, api: fakeNotificationsAPI(
+            update: { _, _ in throw notFound },
+            test: { _ in throw notFound }
+        ))
+        #expect(await sheet.save() == nil)
+        #expect(sheet.isGone)
+        #expect(sheet.saveError == "This connection was deleted elsewhere.")
+        #expect(!sheet.canSave)
+        #expect(!sheet.canTest)
+    }
+
+    @Test func aTestThatFindsTheConnectionGoneSaysSo() async throws {
+        let draft = try #require(NtfyDraft(editing: try savedConnections()[0]))
+        let sheet = NtfySheetModel(draft: draft, api: fakeNotificationsAPI(test: { _ in throw notFound }))
+        await sheet.test()
+        #expect(sheet.isGone)
+        #expect(sheet.testState == .failed("This connection was deleted elsewhere."))
+    }
+}

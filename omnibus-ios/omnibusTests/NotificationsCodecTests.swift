@@ -120,7 +120,39 @@ struct NotificationsCodecTests {
             try decode(PublicURLStatus.self, #"{"url":null,"source":"none"}"#)
                 == PublicURLStatus(url: nil, source: .none)
         )
-        #expect(PublicURLSource.allCases == [.settings, .env, .none])
+    }
+
+    @Test("a public URL source this build doesn't know decodes and claims no source")
+    func unknownSourceDoesNotThrow() throws {
+        let status = try decode(PublicURLStatus.self, #"{"url":"https://b.example","source":"cluster"}"#)
+        #expect(status.source == .unknown("cluster"))
+        #expect(status.url == "https://b.example")
+        #expect(NotificationsFlow.sourceLine(status) == "Set.")
+        #expect(NotificationsModel.fieldText(status).isEmpty)
+        #expect(NotificationsFlow.sourceLine(PublicURLStatus(url: nil, source: .unknown("cluster"))) == "Not set.")
+    }
+
+    @Test("a sign-in mode this build doesn't know decodes, and its connection is read-only")
+    func unknownAuthDoesNotThrow() throws {
+        let json = """
+            {"connections":[{"id":9,"name":"Hub","enabled":true,"events":[],
+              "settings":{"kind":"ntfy","server_url":"https://ntfy.sh","topic":"hub","auth":"oauth",
+               "username":null,"token_set":false,"password_set":false,"priority":3,"tags":[],
+               "include_details":true},
+              "last_delivery":null}],"available_events":[]}
+            """
+        let connection = try #require(try decode(NotificationConnections.self, json).connections.first)
+        guard case let .ntfy(settings) = connection.settings else {
+            Issue.record("expected ntfy settings")
+            return
+        }
+        #expect(settings.auth == .unknown("oauth"))
+        #expect(!NotificationsFlow.isEditable(connection))
+        #expect(NtfyDraft(editing: connection) == nil)
+        #expect(NtfyDraft.toggled(connection, enabled: false) == nil)
+        #expect(NotificationsFlow.detail(connection).hasPrefix("ntfy \u{00B7} ntfy.sh/hub"))
+        #expect(NotificationsFlow.detail(connection).contains("update the app"))
+        #expect(NtfyAuth.choices == [.none, .token, .basic])
     }
 
     // MARK: - Encoding
@@ -183,6 +215,16 @@ struct NotificationsCodecTests {
         #expect(settings["username"] as? String == "sam")
         #expect(!settings.keys.contains("password"))
         #expect(!settings.keys.contains("token"))
+    }
+
+    @Test("a server URL is sent as typed, trailing slash and all, with only the spaces trimmed")
+    func serverURLSentAsTyped() throws {
+        var draft = NtfyDraft(offering: [])
+        draft.name = "Sub-path"
+        draft.serverURL = "  https://example.com/ntfy/ "
+        draft.topic = "t"
+        #expect(try encodedSettings(draft.input)["server_url"] as? String == "https://example.com/ntfy/")
+        #expect(try encodedSettings(draft.testRequest)["server_url"] as? String == "https://example.com/ntfy/")
     }
 
     @Test("an edit that types a new token sends it")
@@ -276,6 +318,19 @@ struct NotificationsCodecTests {
         #expect(R.test == NotificationRoute(method: "POST", path: "/api/admin/notifications/test"))
     }
 
+    @Test("a 404 means a server without these routes on the first read, and a deleted connection elsewhere")
+    func notFoundWordingByPlace() {
+        let notFound = APIError.http(status: 404, message: "no such notification connection")
+        #expect(NotificationsFlow.isGone(notFound))
+        #expect(!NotificationsFlow.isGone(APIError.http(status: 422, message: "x")))
+        #expect(!NotificationsFlow.isGone(FakeFailure()))
+        let load = NotificationsFlow.message(notFound, in: .load)
+        #expect(load.contains("aren\u{2019}t available on this server"))
+        #expect(!load.contains("Pull down"))
+        #expect(NotificationsFlow.message(notFound, in: .list) == "That connection was deleted elsewhere.")
+        #expect(NotificationsFlow.message(notFound, in: .sheet) == "This connection was deleted elsewhere.")
+    }
+
     @Test("a refused value and a provider's answer are shown in the server's own words")
     func errorTextIsTheServers() {
         #expect(
@@ -286,8 +341,6 @@ struct NotificationsCodecTests {
             NotificationsFlow.message(APIError.http(status: 502, message: "the server answered 401 Unauthorized"))
                 == "the server answered 401 Unauthorized"
         )
-        #expect(NotificationsFlow.message(APIError.http(status: 404, message: "no such notification connection"))
-            .hasPrefix("That connection is gone"))
         #expect(NotificationsFlow.message(APIError.offline) == "You're offline.")
         #expect(NotificationsFlow.message(FakeFailure()) == "boom")
     }

@@ -4,7 +4,9 @@
 //  the form's current values and saves nothing. The fields match the web's.
 //
 //  A saved token or password is never shown: its field opens blank and says
-//  it is saved, and left blank it is kept (`NtfyDraft` leaves the key out).
+//  it is saved, and left blank it is kept (`NtfyDraft` leaves the key out) —
+//  until the address or username it belongs to changes. A refused save shows
+//  in a banner under the bar, where the Save that was tapped is.
 
 import SwiftUI
 
@@ -50,12 +52,15 @@ struct NtfyConnectionSheet: View {
             }
             .scrollIndicators(.hidden)
             .scrollDismissesKeyboard(.interactively)
+            .safeAreaInset(edge: .top, spacing: 0) { banner }
             .background(ScreenBackground())
             .navigationTitle(connection == nil ? "New ntfy connection" : "Edit connection")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        // A save in flight lands whatever the sheet does; closing would hide its answer.
+                        .disabled(sheet.isSaving)
                         .accessibilityIdentifier("ntfy.cancel")
                 }
                 ToolbarItem(placement: .confirmationAction) {
@@ -70,9 +75,53 @@ struct NtfyConnectionSheet: View {
             }
         }
         .tint(palette.accentColor)
-        // Unsaved typing goes only by Cancel, never by a stray swipe.
-        .interactiveDismissDisabled(sheet.isDirty)
+        // Unsaved typing goes only by Cancel, never by a stray swipe; nor does a save in flight.
+        .interactiveDismissDisabled(sheet.isDirty || sheet.isSaving)
+        .onChange(of: sheet.saveError) { _, error in
+            guard let error else { return }
+            AccessibilityNotification.Announcement(error).post()
+        }
+        .onChange(of: sheet.isGone) { _, gone in
+            if gone, let connection { screen.remove(id: connection.id) }
+        }
     }
+
+    /// A refused save, or a connection deleted elsewhere, pinned under the bar.
+    @ViewBuilder
+    private var banner: some View {
+        if let error = sheet.saveError ?? (sheet.isGone ? NotificationsFlow.message(gone404, in: .sheet) : nil) {
+            HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .accessibilityHidden(true)
+                Text(error)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if sheet.isGone {
+                    Button("Close") { dismiss() }
+                        .font(.ui(13.5, weight: .semibold))
+                        .foregroundStyle(palette.ink0Color)
+                        .accessibilityIdentifier("ntfy.closeGone")
+                }
+            }
+            .font(.ui(13))
+            .foregroundStyle(palette.badColor)
+            .padding(Spacing.md)
+            .background(
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .fill(palette.badColor.opacity(0.14))
+            )
+            .screenPadding()
+            .padding(.vertical, Spacing.sm)
+            // The whole band is opaque, so the form never scrolls visibly behind it.
+            .background(palette.bg0Color)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("ntfy.saveError")
+            .transition(.opacity.combined(with: .move(edge: .top)))
+        }
+    }
+
+    /// Stands in for the 404 that marked the connection gone, for its wording.
+    private var gone404: APIError { .http(status: 404, message: "") }
 
     // MARK: - Sections
 
@@ -102,7 +151,7 @@ struct NtfyConnectionSheet: View {
     private func signIn(_ draft: Binding<NtfyDraft>) -> some View {
         group("Sign-in") {
             Plate {
-                ForEach(Array(NtfyAuth.allCases.enumerated()), id: \.element) { index, mode in
+                ForEach(Array(NtfyAuth.choices.enumerated()), id: \.element) { index, mode in
                     authRow(mode, isFirst: index == 0, selection: draft.auth)
                 }
             }
@@ -110,22 +159,24 @@ struct NtfyConnectionSheet: View {
             .accessibilityIdentifier("ntfy.auth")
 
             switch draft.wrappedValue.auth {
-            case .none:
+            case .none, .unknown:
                 EmptyView()
             case .token:
+                let state = draft.wrappedValue.tokenState
                 Plate {
-                    secretField("Access token", text: draft.token, isSaved: draft.wrappedValue.keepsSavedToken, identifier: "ntfy.token", isFirst: true)
+                    secretField("Access token", text: draft.token, state: state, identifier: "ntfy.token", isFirst: true)
                 }
-                if draft.wrappedValue.keepsSavedToken { secretCaption("token") }
+                secretCaption("token", state)
             case .basic:
+                let state = draft.wrappedValue.passwordState
                 Plate {
                     PlateField(
                         label: "Username", text: draft.username, isFirst: true,
                         identifier: "ntfy.username", capitalization: .never
                     )
-                    secretField("Password", text: draft.password, isSaved: draft.wrappedValue.keepsSavedPassword, identifier: "ntfy.password")
+                    secretField("Password", text: draft.password, state: state, identifier: "ntfy.password")
                 }
-                if draft.wrappedValue.keepsSavedPassword { secretCaption("password") }
+                secretCaption("password", state)
             }
         }
     }
@@ -162,19 +213,39 @@ struct NtfyConnectionSheet: View {
     }
 
     private func secretField(
-        _ label: String, text: Binding<String>, isSaved: Bool, identifier: String, isFirst: Bool = false
+        _ label: String, text: Binding<String>, state: SavedSecret, identifier: String, isFirst: Bool = false
     ) -> some View {
         PlateField(
             label: label, text: text, isFirst: isFirst,
             identifier: identifier,
-            placeholder: isSaved ? "Saved \u{2014} leave blank to keep" : "",
+            placeholder: Self.secretPlaceholder(state),
             capitalization: .never,
             isSecure: true
         )
     }
 
-    private func secretCaption(_ noun: String) -> some View {
-        caption("The saved \(noun) is never shown. Leave it blank to keep it, or type a new one to replace it.")
+    nonisolated static func secretPlaceholder(_ state: SavedSecret) -> String {
+        switch state {
+        case .none: ""
+        case .kept: "Saved \u{2014} leave blank to keep"
+        case .reenter: "Enter it again"
+        }
+    }
+
+    @ViewBuilder
+    private func secretCaption(_ noun: String, _ state: SavedSecret) -> some View {
+        switch state {
+        case .none:
+            EmptyView()
+        case .kept:
+            caption("The saved \(noun) is never shown. Leave it blank to keep it, or type a new one to replace it.")
+        case let .reenter(reason):
+            Text("The saved \(noun) can\u{2019}t be kept because \(reason). Enter it again.")
+                .font(.ui(12))
+                .foregroundStyle(palette.warnColor)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("ntfy.reenter")
+        }
     }
 
     private func message(_ draft: Binding<NtfyDraft>) -> some View {
@@ -324,15 +395,8 @@ struct NtfyConnectionSheet: View {
                     .foregroundStyle(palette.ink3Color)
                     .accessibilityIdentifier("ntfy.issue")
             }
-            if let error = sheet.saveError {
-                Text(error)
-                    .font(.ui(13))
-                    .foregroundStyle(palette.badColor)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("ntfy.saveError")
-            }
             if !isOnline {
-                Text("You\u{2019}re offline. Connections are saved on the server, so this can wait.")
+                Text("You\u{2019}re offline. Notification settings need a connection to the server.")
                     .font(.ui(13))
                     .foregroundStyle(palette.ink3Color)
             }
@@ -350,7 +414,7 @@ struct NtfyConnectionSheet: View {
                     .foregroundStyle(palette.badColor)
             }
             .buttonStyle(.plain)
-            .disabled(!isOnline || isDeleting || sheet.isSaving)
+            .disabled(!isOnline || isDeleting || sheet.isSaving || sheet.isGone)
             .accessibilityIdentifier("ntfy.delete")
 
             if let deleteError {
@@ -417,6 +481,7 @@ struct NtfyConnectionSheet: View {
         case .none: "None"
         case .token: "Access token"
         case .basic: "Username & password"
+        case let .unknown(name): name
         }
     }
 
@@ -425,6 +490,7 @@ struct NtfyConnectionSheet: View {
         case .none: "For a topic anyone may post to."
         case .token: "An ntfy access token, sent as a bearer token."
         case .basic: "An ntfy account\u{2019}s sign-in."
+        case .unknown: "Set by a newer version of Omnibus."
         }
     }
 

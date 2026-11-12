@@ -76,7 +76,7 @@ struct NotificationsView: View {
                 publicURLSection
                 connectionsSection
                 if !isOnline {
-                    Text("You\u{2019}re offline. These settings live on the server, so changes wait until you\u{2019}re back.")
+                    Text("You\u{2019}re offline. Notification settings need a connection to the server.")
                         .font(.ui(13))
                         .foregroundStyle(palette.ink3Color)
                 }
@@ -110,7 +110,9 @@ struct NotificationsView: View {
                     isFirst: true,
                     keyboard: .URL,
                     identifier: "notifications.publicURL.field",
-                    placeholder: status.source == .env ? status.url ?? "" : "https://books.example.com",
+                    // A URL in effect that isn't saved here is shown, not offered for editing.
+                    placeholder: status.source == .settings
+                        ? "https://books.example.com" : status.url ?? "https://books.example.com",
                     capitalization: .never
                 )
             }
@@ -167,7 +169,7 @@ struct NotificationsView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.bottom, Spacing.xs)
 
-            if let deleteError {
+            if let deleteError = deleteError ?? model.listNotice {
                 Text(deleteError)
                     .font(.ui(12.5))
                     .foregroundStyle(palette.badColor)
@@ -290,11 +292,8 @@ private struct ConnectionRow: View {
 
     @Environment(\.palette) private var palette
 
-    /// Only a provider this build knows can be edited or switched.
-    private var isKnown: Bool {
-        if case .ntfy = connection.settings { return true }
-        return false
-    }
+    /// Only a provider and sign-in this build knows can be edited or switched.
+    private var isKnown: Bool { NotificationsFlow.isEditable(connection) }
 
     var body: some View {
         VStack(spacing: 0) {

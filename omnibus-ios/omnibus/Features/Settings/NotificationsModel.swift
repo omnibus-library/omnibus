@@ -4,7 +4,9 @@
 //
 //  Instance configuration under rule 08: every write goes straight to the
 //  server and nothing is queued, so a failed one says so and puts the screen
-//  back rather than claim a change that exists nowhere.
+//  back rather than claim a change that exists nowhere. Each landed write moves
+//  `epoch`, so a read that was already out when it landed is read again rather
+//  than put back what the write replaced.
 
 import Foundation
 import Observation
@@ -55,9 +57,15 @@ final class NotificationsModel {
     private(set) var toggling: Set<Int64> = []
     /// A row's failed switch, by connection.
     private(set) var rowErrors: [Int64: String] = [:]
+    /// Something the list says about a row no longer on it.
+    private(set) var listNotice: String?
 
     /// The field's value as last seeded, so a refresh doesn't overwrite typing.
     private var seededText = ""
+    /// Moved by every write that lands; a read started before one is stale.
+    private var epoch = 0
+    /// Reads a load makes before it gives up on outrunning the writes.
+    static let loadAttempts = 3
     let api: NotificationsAPI
 
     init(api: NotificationsAPI = .live) {
@@ -71,17 +79,27 @@ final class NotificationsModel {
     var availableEvents: [NotificationEventName] { list?.availableEvents ?? [] }
 
     /// Reads the URL and the connections together. A failure shows only while
-    /// nothing is on screen; a failed refresh leaves the screen as it was.
+    /// nothing is on screen; a failed refresh leaves the screen as it was, and a
+    /// cancelled one leaves it to the next appearance.
     func load() async {
-        do {
-            async let status = api.publicURL()
-            async let connections = api.connections()
-            let (freshStatus, freshList) = try await (status, connections)
-            seed(freshStatus)
-            list = freshList
-            failure = nil
-        } catch {
-            if !isLoaded { failure = NotificationsFlow.message(error) }
+        for _ in 0..<Self.loadAttempts {
+            let started = epoch
+            do {
+                async let status = api.publicURL()
+                async let connections = api.connections()
+                let (freshStatus, freshList) = try await (status, connections)
+                // A write landed while this read was out, so it may predate it.
+                guard epoch == started else { continue }
+                seed(freshStatus)
+                list = freshList
+                failure = nil
+                listNotice = nil
+                return
+            } catch {
+                if isCancellation(error) { return }
+                if !isLoaded { failure = NotificationsFlow.message(error, in: .load) }
+                return
+            }
         }
     }
 
@@ -103,6 +121,7 @@ final class NotificationsModel {
         defer { isSavingPublicURL = false }
         do {
             let status = try await api.setPublicURL(url)
+            epoch += 1
             publicURL = status
             seededText = Self.fieldText(status)
             publicURLText = seededText
@@ -113,7 +132,7 @@ final class NotificationsModel {
     }
 
     /// Only a value saved here fills the field: an environment value isn't one to edit.
-    static func fieldText(_ status: PublicURLStatus) -> String {
+    nonisolated static func fieldText(_ status: PublicURLStatus) -> String {
         status.source == .settings ? status.url ?? "" : ""
     }
 
@@ -134,9 +153,19 @@ final class NotificationsModel {
         else { return }
         toggling.insert(connection.id)
         rowErrors[connection.id] = nil
+        listNotice = nil
         replace(connection.id) { $0.enabled = enabled }
         do {
-            upsert(try await api.update(connection.id, input))
+            let saved = try await api.update(connection.id, input)
+            // A row deleted while this was out stays deleted.
+            if connections.contains(where: { $0.id == saved.id }) {
+                upsert(saved)
+            } else {
+                epoch += 1
+            }
+        } catch let error where NotificationsFlow.isGone(error) {
+            remove(id: connection.id)
+            listNotice = NotificationsFlow.message(error, in: .list)
         } catch {
             replace(connection.id) { $0.enabled = connection.enabled }
             rowErrors[connection.id] = NotificationsFlow.message(error)
@@ -144,15 +173,16 @@ final class NotificationsModel {
         toggling.remove(connection.id)
     }
 
-    /// Deletes a connection. Answers why it couldn't, or nil once it is gone.
+    /// Deletes a connection. Answers why it couldn't, or nil once it is gone;
+    /// one the server no longer has counts as deleted.
     func delete(id: Int64) async -> String? {
         do {
             try await api.delete(id)
-            remove(id: id)
-            return nil
         } catch {
-            return NotificationsFlow.message(error)
+            guard NotificationsFlow.isGone(error) else { return NotificationsFlow.message(error) }
         }
+        remove(id: id)
+        return nil
     }
 
     /// Puts a saved connection on the list, kept in the server's name order.
@@ -163,11 +193,14 @@ final class NotificationsModel {
         current.connections.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
         list = current
         rowErrors[connection.id] = nil
+        epoch += 1
     }
 
+    /// Takes a connection off the list: deleted here, or found deleted elsewhere.
     func remove(id: Int64) {
         list?.connections.removeAll { $0.id == id }
         rowErrors[id] = nil
+        epoch += 1
     }
 
     private func replace(_ id: Int64, _ change: (inout NotificationConnection) -> Void) {
@@ -202,6 +235,8 @@ final class NtfySheetModel {
     private(set) var isSaving = false
     private(set) var saveError: String?
     private(set) var testState: NtfyTestState = .idle
+    /// The saved connection was deleted elsewhere: nothing here can be saved or tested.
+    private(set) var isGone = false
 
     private let api: NotificationsAPI
 
@@ -212,8 +247,8 @@ final class NtfySheetModel {
     }
 
     var isDirty: Bool { draft != original }
-    var canSave: Bool { !isSaving && draft.saveIssue == nil }
-    var canTest: Bool { testState != .sending && draft.settingsIssue == nil }
+    var canSave: Bool { !isSaving && !isGone && draft.saveIssue == nil }
+    var canTest: Bool { testState != .sending && !isGone && draft.settingsIssue == nil }
 
     /// Creates or replaces the connection. Answers what the server saved, or nil
     /// with `saveError` set to its reason.
@@ -228,7 +263,8 @@ final class NtfySheetModel {
             }
             return try await api.create(input)
         } catch {
-            saveError = NotificationsFlow.message(error)
+            noteGone(error)
+            saveError = NotificationsFlow.message(error, in: .sheet)
             return nil
         }
     }
@@ -244,8 +280,14 @@ final class NtfySheetModel {
             try await api.test(sent.testRequest)
             outcome = .sent
         } catch {
-            outcome = .failed(NotificationsFlow.message(error))
+            noteGone(error)
+            outcome = .failed(NotificationsFlow.message(error, in: .sheet))
         }
         testState = draft == sent ? outcome : .idle
+    }
+
+    /// A 404 for a saved connection means it was deleted elsewhere.
+    private func noteGone(_ error: Error) {
+        if draft.isEditing, NotificationsFlow.isGone(error) { isGone = true }
     }
 }

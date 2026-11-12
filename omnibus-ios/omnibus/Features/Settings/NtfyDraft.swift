@@ -4,10 +4,22 @@
 //
 //  A saved token or password never comes back from the server, so an edit
 //  opens with both fields blank and remembers only whether each is set. Blank
-//  then means "keep it": the key is left out of what is sent. A turn of a
-//  row's switch goes through here too, carrying no secret at all.
+//  then means "keep it": the key is left out of what is sent. The server keeps
+//  a secret only for the address (and username) it was saved with, so editing
+//  either asks for it again. A turn of a row's switch goes through here too,
+//  carrying no secret at all.
 
 import Foundation
+
+/// What a blank secret field means.
+enum SavedSecret: Equatable, Sendable {
+    /// Nothing saved for this sign-in mode: it must be typed.
+    case none
+    /// Saved, and left blank it is kept.
+    case kept
+    /// Saved, but the server won't keep it, for the reason given: it must be typed again.
+    case reenter(because: String)
+}
 
 struct NtfyDraft: Equatable, Sendable {
     var name = ""
@@ -29,6 +41,9 @@ struct NtfyDraft: Equatable, Sendable {
     /// Whether the saved connection holds a token, or a password.
     private(set) var tokenSaved = false
     private(set) var passwordSaved = false
+    /// The address and username the saved secret belongs to.
+    private(set) var savedServerURL: String?
+    private(set) var savedUsername: String?
 
     static let nameLimit = 100
 
@@ -37,10 +52,15 @@ struct NtfyDraft: Equatable, Sendable {
         events = available
     }
 
-    /// An edit of `connection` with both secrets blank; nil for a provider this build doesn't know.
+    /// An edit of `connection` with both secrets blank; nil for a provider or
+    /// sign-in mode this build doesn't know, which is never edited or resent.
     init?(editing connection: NotificationConnection) {
-        guard case let .ntfy(settings) = connection.settings else { return nil }
+        guard case let .ntfy(settings) = connection.settings,
+              NtfyAuth.choices.contains(settings.auth)
+        else { return nil }
         savedID = connection.id
+        savedServerURL = settings.serverURL
+        savedUsername = settings.username
         name = connection.name
         enabled = connection.enabled
         events = connection.events
@@ -57,10 +77,31 @@ struct NtfyDraft: Equatable, Sendable {
 
     var isEditing: Bool { savedID != nil }
 
-    /// Whether a blank token field keeps the saved token. Only a token saved for
-    /// token auth survives: the server drops it on a switch to another mode.
-    var keepsSavedToken: Bool { auth == .token && tokenSaved }
-    var keepsSavedPassword: Bool { auth == .basic && passwordSaved }
+    /// What a blank token field means. A token exists only while token auth was
+    /// saved (the server drops it on a switch of mode), and is kept only for the
+    /// address it was saved with.
+    var tokenState: SavedSecret {
+        guard auth == .token, tokenSaved else { return .none }
+        return addressChanged ? .reenter(because: "the server URL changed") : .kept
+    }
+
+    /// What a blank password field means: kept only for the saved address and username.
+    var passwordState: SavedSecret {
+        guard auth == .basic, passwordSaved else { return .none }
+        if addressChanged { return .reenter(because: "the server URL changed") }
+        if username.trimmingCharacters(in: .whitespacesAndNewlines) != (savedUsername ?? "") {
+            return .reenter(because: "the username changed")
+        }
+        return .kept
+    }
+
+    var keepsSavedToken: Bool { tokenState == .kept }
+    var keepsSavedPassword: Bool { passwordState == .kept }
+
+    /// Whether the address differs from the one the saved secret belongs to.
+    private var addressChanged: Bool {
+        serverURL.trimmingCharacters(in: .whitespacesAndNewlines) != (savedServerURL ?? "")
+    }
 
     /// The tags typed, trimmed, blanks dropped.
     var tagList: [String] {
@@ -78,10 +119,20 @@ struct NtfyDraft: Equatable, Sendable {
         switch auth {
         case .none: return nil
         case .token:
-            return token.isBlank && !keepsSavedToken ? "Add an access token." : nil
+            return token.isBlank ? Self.missing("an access token", "access token", tokenState) : nil
         case .basic:
             if username.isBlank { return "Add a username." }
-            return password.isBlank && !keepsSavedPassword ? "Add a password." : nil
+            return password.isBlank ? Self.missing("a password", "password", passwordState) : nil
+        case .unknown: return "This sign-in can\u{2019}t be changed in this version of the app."
+        }
+    }
+
+    /// A blank secret's issue; nil when the saved one is kept.
+    private static func missing(_ some: String, _ noun: String, _ state: SavedSecret) -> String? {
+        switch state {
+        case .kept: nil
+        case .none: "Add \(some)."
+        case let .reenter(reason): "Enter the \(noun) again: \(reason)."
         }
     }
 

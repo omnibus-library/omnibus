@@ -5,20 +5,51 @@
 //  A connection's secrets go one way: an input carries a token or password
 //  only when one was typed, and leaves the key out otherwise so the server
 //  keeps the saved one; a response says only whether one is set. Settings are
-//  tagged by `kind`, and a kind this build doesn't know decodes as `.unknown`
-//  so one newer provider can't fail the whole list.
+//  tagged by `kind`; a kind, sign-in mode or URL source this build doesn't know
+//  decodes as `.unknown`, so one newer value can't fail a whole response.
 
 import Foundation
 
 // MARK: - Public URL
 
 /// Where the public URL in effect comes from.
-enum PublicURLSource: String, Codable, Sendable, CaseIterable {
+enum PublicURLSource: Hashable, Sendable {
     /// Saved through the API.
     case settings
     /// Read from the server's `OMNIBUS_PUBLIC_URL`, since none is saved.
     case env
     case none
+    /// A source a newer server names; the screen claims none.
+    case unknown(String)
+
+    init(rawValue: String) {
+        switch rawValue {
+        case "settings": self = .settings
+        case "env": self = .env
+        case "none": self = .none
+        default: self = .unknown(rawValue)
+        }
+    }
+
+    var rawValue: String {
+        switch self {
+        case .settings: "settings"
+        case .env: "env"
+        case .none: "none"
+        case let .unknown(name): name
+        }
+    }
+}
+
+extension PublicURLSource: Codable {
+    init(from decoder: Decoder) throws {
+        self.init(rawValue: try decoder.singleValueContainer().decode(String.self))
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
 }
 
 struct PublicURLStatus: Codable, Hashable, Sendable {
@@ -54,8 +85,42 @@ struct NotificationEventName: RawRepresentable, Codable, Hashable, Sendable {
 }
 
 /// How the server signs in to an ntfy server.
-enum NtfyAuth: String, Codable, Sendable, CaseIterable {
+enum NtfyAuth: Hashable, Sendable {
     case none, token, basic
+    /// A mode a newer server saved; its connection is shown, never edited.
+    case unknown(String)
+
+    /// The modes the form offers.
+    static let choices: [NtfyAuth] = [.none, .token, .basic]
+
+    init(rawValue: String) {
+        switch rawValue {
+        case "none": self = .none
+        case "token": self = .token
+        case "basic": self = .basic
+        default: self = .unknown(rawValue)
+        }
+    }
+
+    var rawValue: String {
+        switch self {
+        case .none: "none"
+        case .token: "token"
+        case .basic: "basic"
+        case let .unknown(name): name
+        }
+    }
+}
+
+extension NtfyAuth: Codable {
+    init(from decoder: Decoder) throws {
+        self.init(rawValue: try decoder.singleValueContainer().decode(String.self))
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
 }
 
 // MARK: - What the server returns

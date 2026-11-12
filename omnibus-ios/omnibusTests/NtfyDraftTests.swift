@@ -111,6 +111,62 @@ struct NtfyDraftTests {
         #expect(draft.settingsIssue == nil)
     }
 
+    @Test("a changed server URL stops keeping the saved token until it is typed again or the URL goes back")
+    func changedURLAsksForTheTokenAgain() throws {
+        var draft = try #require(NtfyDraft(editing: try savedConnections()[0]))
+        #expect(draft.tokenState == .kept)
+
+        draft.serverURL = "https://ntfy.example.org"
+        #expect(draft.tokenState == .reenter(because: "the server URL changed"))
+        #expect(!draft.keepsSavedToken)
+        #expect(draft.settingsIssue == "Enter the access token again: the server URL changed.")
+        #expect(draft.saveIssue == draft.settingsIssue)
+        #expect(NtfyConnectionSheet.secretPlaceholder(draft.tokenState) == "Enter it again")
+
+        draft.token = "tk_again"
+        #expect(draft.settingsIssue == nil)
+        #expect(draft.settings.token == "tk_again")
+        #expect(draft.testRequest.settings == .ntfy(draft.settings))
+
+        // Back to the saved address, spaces aside: blank keeps it once more.
+        draft.token = ""
+        draft.serverURL = " https://ntfy.sh "
+        #expect(draft.tokenState == .kept)
+        #expect(draft.settingsIssue == nil)
+        #expect(draft.settings.token == nil)
+        #expect(NtfyConnectionSheet.secretPlaceholder(draft.tokenState) == "Saved \u{2014} leave blank to keep")
+    }
+
+    @Test("a changed server URL or username stops keeping the saved password")
+    func changedURLOrUsernameAsksForThePasswordAgain() throws {
+        var draft = try #require(NtfyDraft(editing: try savedConnections()[1]))
+        #expect(draft.passwordState == .kept)
+
+        draft.username = "ada"
+        #expect(draft.passwordState == .reenter(because: "the username changed"))
+        #expect(draft.settingsIssue == "Enter the password again: the username changed.")
+        draft.password = "pw2"
+        #expect(draft.settingsIssue == nil)
+        #expect(draft.settings.password == "pw2")
+
+        draft.password = ""
+        draft.username = " sam "
+        #expect(draft.passwordState == .kept)
+
+        // A trailing slash is a different address to the server, so it asks too.
+        draft.serverURL = "https://example.com/ntfy/"
+        #expect(draft.passwordState == .reenter(because: "the server URL changed"))
+        #expect(draft.settingsIssue == "Enter the password again: the server URL changed.")
+    }
+
+    @Test("a new form has no saved secret to keep")
+    func newFormHasNothingSaved() {
+        var draft = valid()
+        draft.auth = .token
+        #expect(draft.tokenState == .none)
+        #expect(NtfyConnectionSheet.secretPlaceholder(draft.tokenState).isEmpty)
+    }
+
     @Test("basic sign-in needs a username, and a password unless one is saved")
     func basicRequirements() throws {
         var draft = valid()
@@ -172,6 +228,9 @@ struct NtfyDraftTests {
         #expect(NotificationsFlow.detail(saved[1]) == "ntfy \u{00B7} example.com/ntfy/den")
         #expect(NotificationsFlow.detail(saved[2]) == "ntfy \u{00B7} 10.0.0.2:8080/t")
         #expect(NotificationsFlow.detail(saved[3]).hasPrefix("gotify \u{00B7} "))
+        // A sub-path reads the same with or without the slash the admin typed.
+        #expect(NotificationsFlow.endpoint(serverURL: "https://example.com/ntfy/", topic: "den") == "example.com/ntfy/den")
+        #expect(NotificationsFlow.endpoint(serverURL: "https://ntfy.sh/", topic: "books") == "ntfy.sh/books")
     }
 
     @Test("a row's last delivery says none yet, when it was delivered, or when and why it failed")
