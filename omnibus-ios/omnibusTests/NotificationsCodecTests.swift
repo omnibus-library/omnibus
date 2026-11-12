@@ -39,7 +39,7 @@ let connectionsJSON = """
       "settings":{"kind":"ntfy","server_url":"https://example.com/ntfy","topic":"den","auth":"basic",
        "username":"sam","token_set":false,"password_set":true,"priority":3,"tags":[],
        "include_details":false},
-      "last_delivery":{"at":1790000100,"ok":false,"error":"ntfy refused the sign-in. Check the access token, or the username and password."}},
+      "last_delivery":{"at":1790000100,"ok":false,"error":"\(unauthorizedSentence)"}},
      {"id":3,"name":"Fresh","enabled":true,"events":["request_needs_chooser"],
       "settings":{"kind":"ntfy","server_url":"http://10.0.0.2:8080","topic":"t","auth":"none",
        "username":null,"token_set":false,"password_set":false,"priority":1,"tags":[],
@@ -156,7 +156,7 @@ struct NotificationsCodecTests {
         #expect(!NotificationsFlow.isEditable(connection))
         #expect(NtfyDraft(editing: connection) == nil)
         #expect(NotificationsFlow.detail(connection).hasPrefix("ntfy \u{00B7} ntfy.sh/hub"))
-        #expect(NotificationsFlow.detail(connection).contains("update the app"))
+        #expect(NotificationsFlow.detail(connection).hasSuffix(NotificationsFlow.newerAppEdits))
         #expect(NtfyAuth.choices == [.none, .token, .basic])
     }
 

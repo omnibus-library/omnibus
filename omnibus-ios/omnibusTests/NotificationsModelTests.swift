@@ -331,7 +331,7 @@ struct NotificationsModelTests {
         #expect(await sent.values.first?.id == nil)
     }
 
-    @Test func aFailedTestShowsTheProvidersAnswer() async {
+    @Test func aFailedTestShowsTheServersSentence() async {
         let sheet = NtfySheetModel(draft: filledDraft(), api: fakeNotificationsAPI(test: { _ in
             throw APIError.http(status: 502, message: unauthorizedSentence)
         }))
@@ -490,6 +490,39 @@ struct NotificationsRaceTests {
         await toggle.value
         #expect(!model.connections.contains { $0.id == 1 })
         #expect(model.toggling.isEmpty)
+    }
+
+    @Test func aRowCantOpenItsSheetWhileItsSwitchSaves() async throws {
+        let saved = try savedConnections()
+        let gate = Gate()
+        let model = await loadedModel(connections: saved) { api in
+            var api = api
+            api.setEnabled = { _, _ in
+                await gate.wait()
+                throw APIError.http(status: 500, message: "database is locked")
+            }
+            return api
+        }
+        #expect(model.canEdit(saved[0]))
+        let toggle = Task { await model.setEnabled(saved[0], false) }
+        #expect(await eventually { model.toggling.contains(1) })
+        // The row shows the unconfirmed value; a sheet seeded from it would save it back.
+        let optimistic = try #require(model.connections.first { $0.id == 1 })
+        #expect(!optimistic.enabled)
+        #expect(!model.canEdit(optimistic))
+        #expect(model.canEdit(saved[1]))
+
+        await gate.open()
+        await toggle.value
+        let confirmed = try #require(model.connections.first { $0.id == 1 })
+        #expect(confirmed.enabled)
+        #expect(model.canEdit(confirmed))
+        #expect(try #require(NtfyDraft(editing: confirmed)).enabled)
+    }
+
+    @Test func aRowThisBuildCantEditNeverOpensItsSheet() async throws {
+        let model = await loadedModel(connections: try savedConnections())
+        #expect(!model.canEdit(try savedConnections()[3]))
     }
 
     // MARK: - Once at a time

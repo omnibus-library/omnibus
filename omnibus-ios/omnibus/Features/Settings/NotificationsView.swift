@@ -181,16 +181,7 @@ struct NotificationsView: View {
             } else {
                 VStack(spacing: 0) {
                     ForEach(Array(model.connections.enumerated()), id: \.element.id) { index, connection in
-                        ConnectionRow(
-                            connection: connection,
-                            isFirst: index == 0,
-                            isSaving: model.toggling.contains(connection.id),
-                            isOnline: isOnline,
-                            rowError: model.rowErrors[connection.id],
-                            setEnabled: { on in Task { await model.setEnabled(connection, on) } },
-                            open: { open(.edit(connection)) },
-                            delete: { confirmDelete = connection }
-                        )
+                        row(connection, isFirst: index == 0)
                     }
                     RecordRule()
                 }
@@ -217,6 +208,20 @@ struct NotificationsView: View {
                 .tint(palette.ink0Color)
             }
         }
+    }
+
+    private func row(_ connection: NotificationConnection, isFirst: Bool) -> ConnectionRow {
+        ConnectionRow(
+            connection: connection,
+            isFirst: isFirst,
+            isSaving: model.toggling.contains(connection.id),
+            canEdit: model.canEdit(connection),
+            isOnline: isOnline,
+            rowError: model.rowErrors[connection.id],
+            setEnabled: { on in Task { await model.setEnabled(connection, on) } },
+            open: { open(.edit(connection)) },
+            delete: { confirmDelete = connection }
+        )
     }
 
     /// Nothing set up yet: what a connection is, and the way to add one.
@@ -259,6 +264,7 @@ struct NotificationsView: View {
     // MARK: - Sheet
 
     private func open(_ target: NtfySheetTarget) {
+        if case let .edit(connection) = target, !model.canEdit(connection) { return }
         deleteError = nil
         sheet = target
     }
@@ -284,6 +290,9 @@ private struct ConnectionRow: View {
     let connection: NotificationConnection
     let isFirst: Bool
     let isSaving: Bool
+    /// Settings this build knows, and no switch saving (`NotificationsModel.canEdit`);
+    /// any row can be switched, since the switch sends nothing but `enabled`.
+    let canEdit: Bool
     let isOnline: Bool
     let rowError: String?
     let setEnabled: (Bool) -> Void
@@ -291,10 +300,6 @@ private struct ConnectionRow: View {
     let delete: () -> Void
 
     @Environment(\.palette) private var palette
-
-    /// Only a provider and sign-in this build knows can be edited; any row can
-    /// be switched, since the switch sends nothing but `enabled`.
-    private var isKnown: Bool { NotificationsFlow.isEditable(connection) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -310,7 +315,7 @@ private struct ConnectionRow: View {
 
                 summary
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .modifier(OpensSheet(enabled: isKnown, action: open))
+                    .modifier(OpensSheet(enabled: canEdit, action: open))
                     .accessibilityIdentifier("notifications.row.\(connection.id)")
 
                 Toggle("Send notifications to \(connection.name)", isOn: Binding(
@@ -325,7 +330,7 @@ private struct ConnectionRow: View {
             .padding(.vertical, 13)
         }
         .contextMenu {
-            if isKnown {
+            if canEdit {
                 Button("Edit", systemImage: "pencil", action: open)
             }
             Button("Delete", systemImage: "trash", role: .destructive, action: delete)
@@ -359,12 +364,12 @@ private struct ConnectionRow: View {
             .padding(.top, 2)
 
             // The server's own sentence, whole: cut short it stops mid-instruction.
+            // Read with the row's combined element, which VoiceOver and tests address.
             if let error = delivery.error {
                 Text(error)
                     .font(.ui(12.5))
                     .foregroundStyle(palette.ink1Color)
                     .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("notifications.row.\(connection.id).error")
             }
 
             if let rowError {

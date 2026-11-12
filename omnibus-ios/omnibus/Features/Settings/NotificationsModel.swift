@@ -177,6 +177,13 @@ final class NotificationsModel {
         toggling.remove(connection.id)
     }
 
+    /// Whether a row may open its edit sheet: settings this build knows, and no
+    /// switch saving. The sheet starts from the row as it stands, which mid-save
+    /// is the value not yet confirmed; a refused switch would be saved back.
+    func canEdit(_ connection: NotificationConnection) -> Bool {
+        NotificationsFlow.isEditable(connection) && !toggling.contains(connection.id)
+    }
+
     /// Deletes a connection. Answers why it couldn't, or nil once it is gone;
     /// one the server no longer has counts as deleted.
     func delete(id: Int64) async -> String? {

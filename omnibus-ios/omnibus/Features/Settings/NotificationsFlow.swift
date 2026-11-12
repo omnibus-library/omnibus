@@ -56,8 +56,9 @@ enum NotificationsFlow {
         }
     }
 
-    /// Whether a connection can be edited and switched here: a provider and
-    /// sign-in mode this build knows. Any other is shown, and may be deleted.
+    /// Whether a connection's settings can be edited here: a provider and
+    /// sign-in mode this build knows. Any connection can be turned on or off
+    /// and deleted here; editing another needs a newer version of the app.
     static func isEditable(_ connection: NotificationConnection) -> Bool {
         NtfyDraft(editing: connection) != nil
     }
@@ -67,14 +68,17 @@ enum NotificationsFlow {
         switch connection.settings {
         case let .ntfy(settings):
             if case .unknown = settings.auth {
-                "ntfy \u{00B7} \(endpoint(serverURL: settings.serverURL, topic: settings.topic)) \u{00B7} update the app to change it"
+                "ntfy \u{00B7} \(endpoint(serverURL: settings.serverURL, topic: settings.topic)) \u{00B7} \(newerAppEdits)"
             } else {
                 "ntfy \u{00B7} \(endpoint(serverURL: settings.serverURL, topic: settings.topic))"
             }
         case let .unknown(kind):
-            "\(kind) \u{00B7} update the app to change it"
+            "\(kind) \u{00B7} \(newerAppEdits)"
         }
     }
+
+    /// Said of a row whose settings this build can't edit, beside a switch that still works.
+    static let newerAppEdits = "a newer version of the app edits its settings"
 
     /// The server's host and any sub-path, then the topic, without the scheme.
     /// A sub-path is shown the same with or without its trailing slash.
