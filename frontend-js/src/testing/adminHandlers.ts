@@ -28,6 +28,12 @@ import {
   type LogRecord,
   McpStatus,
   MetadataSource,
+  type NotificationConnection,
+  NotificationConnectionInput,
+  type NotificationEvent,
+  NotificationTest,
+  type PublicUrlStatus,
+  PublicUrlUpdate,
   RegistrationStatus,
   type RequestsSettingsStatus,
   RequestsSettingsUpdate,
@@ -691,6 +697,188 @@ export function mcpHandlers(
   ];
 }
 
+/** What `GET /api/settings/public-url` reports for a URL saved through the API. */
+export function aWirePublicUrl(
+  overrides: Partial<PublicUrlStatus> = {},
+): PublicUrlStatus {
+  return { url: "https://books.example.com", source: "settings", ...overrides };
+}
+
+/**
+ * `GET` and `POST /api/settings/public-url`: a save sets the URL without its trailing
+ * slash, a blank or null one clears it back to `env` (when given), and anything but an
+ * http(s) address answers 422 as the server does. The handler adds each posted URL to `saved`.
+ */
+export function publicUrlHandlers(
+  initial: PublicUrlStatus,
+  {
+    saved = [],
+    env = null,
+  }: { saved?: (string | null)[]; env?: string | null } = {},
+) {
+  let current = initial;
+  return [
+    http.get("/api/settings/public-url", () => HttpResponse.json(current)),
+    http.post("/api/settings/public-url", async ({ request }) => {
+      const url = PublicUrlUpdate.parse(await request.json()).url ?? null;
+      saved.push(url);
+      if (url === null || url.trim() === "") {
+        current = env
+          ? { url: env, source: "env" }
+          : { url: null, source: "none" };
+      } else if (!/^https?:\/\//.test(url.trim())) {
+        return new HttpResponse(
+          "public url must start with http:// or https://",
+          { status: 422 },
+        );
+      } else {
+        current = { url: url.trim().replace(/\/+$/, ""), source: "settings" };
+      }
+      return HttpResponse.json(current);
+    }),
+  ];
+}
+
+/** An ntfy connection saved with a token, as `GET /api/admin/notifications/connections` lists it. */
+export function aWireNotificationConnection(
+  overrides: Partial<NotificationConnection> = {},
+  settings: Partial<NotificationConnection["settings"]> = {},
+): NotificationConnection {
+  return {
+    id: 1,
+    name: "Phone",
+    enabled: true,
+    events: ["request_needs_chooser"],
+    last_delivery: null,
+    ...overrides,
+    settings: {
+      kind: "ntfy",
+      server_url: "https://ntfy.sh",
+      topic: "omnibus-requests",
+      auth: "token",
+      username: null,
+      token_set: true,
+      password_set: false,
+      priority: 3,
+      tags: [],
+      include_details: true,
+      ...settings,
+    },
+  };
+}
+
+/** What `notificationHandlers` records of the writes it answers, each body exactly as sent. */
+export type NotificationWrites = {
+  created: unknown[];
+  updated: { id: number; body: unknown }[];
+  deleted: number[];
+  tested: unknown[];
+};
+
+/** A saved connection's settings after `input` replaces them: a secret left out is kept while the mode stays. */
+function storedSettings(
+  input: NotificationConnectionInput["settings"],
+  was: NotificationConnection["settings"] | null,
+): NotificationConnection["settings"] {
+  const kept = (mode: "token" | "basic", set: boolean | undefined) =>
+    was?.auth === mode && set === true;
+  return {
+    kind: "ntfy",
+    server_url: input.server_url.trim().replace(/\/+$/, ""),
+    topic: input.topic.trim(),
+    auth: input.auth,
+    username: input.auth === "basic" ? (input.username ?? null) : null,
+    token_set:
+      input.auth === "token" &&
+      (input.token ? true : kept("token", was?.token_set)),
+    password_set:
+      input.auth === "basic" &&
+      (input.password ? true : kept("basic", was?.password_set)),
+    priority: input.priority ?? 3,
+    tags: input.tags ?? [],
+    include_details: input.include_details ?? true,
+  };
+}
+
+/**
+ * The `/api/admin/notifications` routes over a list of connections: a create adds one, a
+ * save replaces one (404 once it is gone), a delete removes one and a test answers 204.
+ * Secrets are never sent back, only whether one is set. The handler records every write.
+ */
+export function notificationHandlers(
+  initial: NotificationConnection[],
+  {
+    available = ["request_needs_chooser"],
+    writes = {},
+  }: {
+    available?: NotificationEvent[];
+    writes?: Partial<NotificationWrites>;
+  } = {},
+) {
+  let connections = initial;
+  const gone = () =>
+    new HttpResponse("notification connection not found", { status: 404 });
+  const idOf = (params: Record<string, unknown>) => Number(params.id);
+  return [
+    http.get("/api/admin/notifications/connections", () =>
+      HttpResponse.json({
+        connections: [...connections].sort((a, b) =>
+          a.name.localeCompare(b.name),
+        ),
+        available_events: available,
+      }),
+    ),
+    http.post("/api/admin/notifications/connections", async ({ request }) => {
+      const body = await request.json();
+      writes.created?.push(body);
+      const input = NotificationConnectionInput.parse(body);
+      const created: NotificationConnection = {
+        id: Math.max(0, ...connections.map((c) => c.id)) + 1,
+        name: input.name.trim(),
+        enabled: input.enabled ?? true,
+        events: input.events,
+        last_delivery: null,
+        settings: storedSettings(input.settings, null),
+      };
+      connections = [...connections, created];
+      return HttpResponse.json(created, { status: 201 });
+    }),
+    http.put(
+      "/api/admin/notifications/connections/:id",
+      async ({ request, params }) => {
+        const id = idOf(params);
+        const body = await request.json();
+        writes.updated?.push({ id, body });
+        const was = connections.find((c) => c.id === id);
+        if (!was) return gone();
+        const input = NotificationConnectionInput.parse(body);
+        const saved: NotificationConnection = {
+          ...was,
+          name: input.name.trim(),
+          enabled: input.enabled ?? true,
+          events: input.events,
+          settings: storedSettings(input.settings, was.settings),
+        };
+        connections = connections.map((c) => (c.id === id ? saved : c));
+        return HttpResponse.json(saved);
+      },
+    ),
+    http.delete("/api/admin/notifications/connections/:id", ({ params }) => {
+      const id = idOf(params);
+      writes.deleted?.push(id);
+      if (!connections.some((c) => c.id === id)) return gone();
+      connections = connections.filter((c) => c.id !== id);
+      return new HttpResponse(null, { status: 204 });
+    }),
+    http.post("/api/admin/notifications/test", async ({ request }) => {
+      const body = await request.json();
+      writes.tested?.push(body);
+      NotificationTest.parse(body);
+      return new HttpResponse(null, { status: 204 });
+    }),
+  ];
+}
+
 /** A healthy server: both folders set, the search index in step, an idle worker and a quiet error ring. */
 export function aWireAdminHealth(
   overrides: Partial<AdminHealthReport> = {},
@@ -782,6 +970,8 @@ export function adminHandlers() {
     ...secretKeyHandlers("/api/google-books-key", NO_KEY),
     ...ebookConvertHandlers(aWireEbookConvert()),
     ...mcpHandlers(false),
+    ...publicUrlHandlers(aWirePublicUrl()),
+    ...notificationHandlers([aWireNotificationConnection()]),
     getGetAdminHealthMockHandler200(() => aWireAdminHealth()),
     logsHandler(() => aWireLogPage()),
   ];

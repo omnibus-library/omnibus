@@ -159,8 +159,8 @@ function ModalError({ error }: { error: string | null }) {
   );
 }
 
-// While `busy` (a save is out, or the form holds edits a stray click would discard) the scrim and Escape do nothing. The cross always works.
-function ModalShell({
+/** An admin form's dialog over a scrim. While `busy` (a save is out, or the form holds edits a stray click would discard) the scrim and Escape do nothing; the cross always works. */
+export function ModalShell({
   title,
   testId,
   busy,

@@ -259,3 +259,157 @@
     display: none;
   }
 }
+
+.api-key-dot.failed {
+  background: var(--bad);
+}
+.notify-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  list-style: none;
+  margin: 1.25rem 0 0;
+  padding: 0;
+}
+.notify-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 0;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  transition: border-color 0.15s;
+}
+@media (hover: hover) {
+  .notify-row:hover {
+    border-color: var(--line);
+  }
+}
+.notify-row-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+}
+.notify-row-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.notify-name {
+  min-width: 0;
+  font-weight: 600;
+  color: var(--ink-0);
+  overflow-wrap: anywhere;
+}
+.notify-kind {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.notify-where {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--ink-1);
+  overflow-wrap: anywhere;
+}
+.notify-delivery {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--ink-1);
+}
+.notify-row.is-off .notify-where,
+.notify-row.is-off .notify-delivery {
+  color: var(--ink-2);
+}
+.notify-error {
+  margin: 0 0 0 16px;
+  font-size: 0.8rem;
+  color: var(--bad);
+  overflow-wrap: anywhere;
+}
+.notify-more {
+  margin-left: 0.4rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink-1);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.notify-more:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+.notify-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.35rem;
+}
+/* Mounted empty so its first message is announced, but an empty one takes no room. */
+.notify-row .settings-status {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.notify-row .settings-status:empty {
+  min-height: 0;
+}
+.notify-empty {
+  margin: 1.25rem 0 0;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  background: var(--bg-1);
+}
+.notify-empty-title {
+  margin: 0 0 0.25rem;
+  font-weight: 600;
+  color: var(--ink-0);
+}
+.notify-loading,
+.notify-load-error {
+  margin-top: 1.25rem;
+}
+.notify-load-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+}
+.notify-load-error .settings-status {
+  margin: 0;
+}
+.notify-form .settings-switch {
+  align-self: flex-start;
+}
+.notify-form > .settings-status {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.notify-form > .settings-status:empty {
+  min-height: 0;
+}
+.notify-toggle {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+@media (prefers-reduced-motion: reduce) {
+  .notify-row {
+    transition: none;
+  }
+}

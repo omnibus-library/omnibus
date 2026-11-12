@@ -90,9 +90,14 @@ quotes and bookmarks, and the EPUB reader adds contents, search, the Aa panel an
 cross-format follow; with follow off, it and the player offer the jump instead.
 The audiobook mini dock on `/read` waits for the player.
 Administration shares `/settings`' frame, `SettingsShell`, which takes its
-navigation as data. Its eight sections are Sources, Maintenance, Metadata and
-Cleanup under Library; People, Integrations, Health and Logs under Server. A
-section with unsaved edits asks before any in-app navigation leaves it. A
+navigation as data. Its nine sections are Sources, Maintenance, Metadata and
+Cleanup under Library; People, Integrations, Notifications, Health and Logs
+under Server. Notifications holds the public server URL that notifications link
+to, and the ntfy connections: each row has its switch, its last delivery and a
+Test of the saved connection, and the add and edit dialog tests the form as it
+stands; a saved token or password shows as set, never as its value, and a blank
+field keeps it. A section with unsaved edits asks before any in-app navigation
+leaves it. A
 reader at `/admin` or the review queue gets one refusal line, with no sidebar
 or breadcrumb. The review queue (`/admin/cleanup/:kind`) takes Y, N and Space,
 an edited book title and an undo, and tallies the pass. `/logs`,
@@ -237,7 +242,8 @@ shell provides it.
   the detect one calls back instead of recording. The cleanup undo handler wraps
   the generated one to record the log ids. Each other write handler records
   what it received, and those over a setting or a list (the settings, accounts,
-  sessions, the relay, the keys) serve the new state on the next read; a cleanup
+  sessions, the relay, the keys, the public URL, the notification connections)
+  serve the new state on the next read; a cleanup
   decision, an undo and a job are only recorded.
   `adminHandlers()` is the default set for the sections. Stories for the admin
   screens run against them, so their `play` tests cover loading, empty, failing
@@ -270,8 +276,10 @@ shell provides it.
   `tiles`, `drillIn`, `heatmap`, `readingNow`, `monthly`, `library` and
   `composition`, the chart builder's `chart`, `plot`, `notes`, `zoom` and
   `tween`, the admin screens' `sources`, `recentTasks`,
-  `workerLines`, `metadataOrder`, `users`, `smtp`, `integrations`, `health`
-  and `logs`, and the cleanup review's `review`), the two stats pages' refusal to
+  `workerLines`, `metadataOrder`, `users`, `smtp`, `integrations`,
+  `publicUrl`, `notifications` (what a save, a switch flip or a test sends, and
+  which secrets it leaves out), `health` and `logs`, and the cleanup review's
+  `review`), the two stats pages' refusal to
   refetch on window focus (against `msw/node`), plus the real route table in
   `src/router.test.tsx`: the settings redirects, the layout split, the guest
   redirect, the admin refusals and the redirects.

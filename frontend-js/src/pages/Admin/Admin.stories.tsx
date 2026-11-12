@@ -61,6 +61,7 @@ export const Sidebar: Story = {
       "cleanup",
       "people",
       "integrations",
+      "notifications",
       "health",
       "logs",
     ];
@@ -74,6 +75,7 @@ export const Sidebar: Story = {
       "Cleanup",
       "People",
       "Integrations",
+      "Notifications",
       "Health",
       "Logs",
       "Your settings",
@@ -164,6 +166,26 @@ export const ShowsThePeopleCards: Story = {
       "Accounts",
     ]);
     await expect(await canvas.findByTestId("users-table")).toBeInTheDocument();
+  },
+};
+
+export const ShowsTheNotificationCards: Story = {
+  args: { path: "/admin?section=notifications" },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByRole("heading", { level: 2, name: "Notifications" }),
+    ).toBeInTheDocument();
+    const headings = await canvas.findAllByRole("heading", { level: 3 });
+    await expect(headings.map((h) => h.textContent)).toEqual([
+      "Public server URL",
+      "Notification connections",
+    ]);
+    await expect(
+      await canvas.findByRole("listitem", { name: "Phone" }),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(document.title).toBe("Omnibus | Notifications · Administration"),
+    );
   },
 };
 

@@ -22,6 +22,8 @@ import { LogsSection } from "./LogsSection";
 import { MaintenanceCard } from "./MaintenanceCard";
 import { McpCard } from "./McpCard";
 import { MetadataOrderCard } from "./MetadataOrderCard";
+import { NotificationConnectionsCard } from "./NotificationConnectionsCard";
+import { PublicUrlCard } from "./PublicUrlCard";
 import { RecentTasksCard } from "./RecentTasksCard";
 import { RegistrationCard } from "./RegistrationCard";
 import { RequestsCard } from "./RequestsCard";
@@ -63,6 +65,15 @@ function Integrations() {
   );
 }
 
+function Notifications() {
+  return (
+    <>
+      <PublicUrlCard />
+      <NotificationConnectionsCard />
+    </>
+  );
+}
+
 // A Record, so a section added to the slugs cannot be left without a body.
 const BODIES: Record<AdminSlug, ComponentType> = {
   sources: SourcesCard,
@@ -71,6 +82,7 @@ const BODIES: Record<AdminSlug, ComponentType> = {
   cleanup: CleanupCard,
   people: People,
   integrations: Integrations,
+  notifications: Notifications,
   health: HealthSection,
   logs: LogsSection,
 };
