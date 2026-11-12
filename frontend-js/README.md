@@ -93,8 +93,10 @@ Administration shares `/settings`' frame, `SettingsShell`, which takes its
 navigation as data. Its nine sections are Sources, Maintenance, Metadata and
 Cleanup under Library; People, Integrations, Notifications, Health and Logs
 under Server. Notifications holds the public server URL that notifications link
-to, and the ntfy connections: each row has its switch, its last delivery and a
-Test of the saved connection, and the add and edit dialog tests the form as it
+to, and the ntfy connections: each row has its switch (which sends only on or
+off, and shows the connection as the server answers it), its last delivery with
+the server's own sentence for a failure, and a Test of the saved connection, and
+the add and edit dialog tests the form as it
 stands; a saved token or password shows as set, never as its value, and a blank
 field keeps it. A section with unsaved edits asks before any in-app navigation
 leaves it. A

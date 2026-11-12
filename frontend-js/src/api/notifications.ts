@@ -5,6 +5,7 @@ import {
   getDeleteNotificationConnectionUrl,
   getPublicUrl,
   getTestNotificationConnectionUrl,
+  getUpdateNotificationConnectionUrl,
   listNotificationConnections,
   postPublicUrl,
   updateNotificationConnection,
@@ -16,7 +17,11 @@ import type {
   NotificationTest,
   PublicUrlStatusOutput,
 } from "./generated/schemas";
-import { NotificationEvent, NtfyAuth } from "./generated/schemas";
+import {
+  NotificationConnection as NotificationConnectionSchema,
+  NotificationEvent,
+  NtfyAuth,
+} from "./generated/schemas";
 
 export type {
   ConnectionSettingsInput,
@@ -71,6 +76,21 @@ export async function saveNotificationConnection(
   input: NotificationConnectionInput,
 ): Promise<NotificationConnection> {
   return ok(await updateNotificationConnection(id, input));
+}
+
+/**
+ * Turns a connection on or off and nothing else, so an edit another admin saved meanwhile
+ * survives; answers the connection as the server now holds it.
+ */
+export async function setNotificationConnectionEnabled(
+  id: number,
+  enabled: boolean,
+): Promise<NotificationConnection> {
+  // shortcut: the OpenAPI document doesn't describe this PATCH yet, so it is sent by hand; swap for the generated set_notification_connection_enabled fetcher once it does.
+  const res = await send(getUpdateNotificationConnectionUrl(id), "PATCH", {
+    enabled,
+  });
+  return NotificationConnectionSchema.parse(await res.json());
 }
 
 /** Deletes a connection and whatever was queued for it. */

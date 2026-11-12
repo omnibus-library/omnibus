@@ -250,15 +250,6 @@ export const connectionInputOf = (
   settings: settingsInputOf(draft),
 });
 
-/** A switch flip: the connection as saved with `enabled` changed, and no secret, so the saved ones are kept. */
-export const toggledInput = (
-  connection: NotificationConnection,
-  enabled: boolean,
-): NotificationConnectionInput => ({
-  ...connectionInputOf(draftOf(connection)),
-  enabled,
-});
-
 /** A test of the form as it stands; with `id`, a secret it leaves blank comes from that saved connection. */
 export const testOf = (
   draft: ConnectionDraft,
@@ -381,20 +372,4 @@ export function deliveryLine(
         at: last.at,
         error: last.error || "No reason was recorded.",
       };
-}
-
-/** How much of a long error a row shows before "Show all". */
-export const ERROR_PREVIEW_CHARS = 140;
-
-/** `error` cut to `max` characters at a word break where one is near, or whole when it fits. */
-export function clipError(
-  error: string,
-  max = ERROR_PREVIEW_CHARS,
-): { text: string; clipped: boolean } {
-  const chars = [...error];
-  if (chars.length <= max) return { text: error, clipped: false };
-  const head = chars.slice(0, max).join("");
-  const space = head.lastIndexOf(" ");
-  const cut = space > max * 0.75 ? head.slice(0, space) : head;
-  return { text: `${cut.trimEnd()}…`, clipped: true };
 }

@@ -15,14 +15,16 @@ const LIST = "/api/admin/notifications/connections";
 const writes: NotificationWrites = {
   created: [],
   updated: [],
+  switched: [],
   deleted: [],
   tested: [],
 };
 
-const LONG_ERROR =
-  'the server answered 401 Unauthorized: {"code":40101,"http":401,"error":"unauthorized","link":"https://ntfy.sh/docs/publish/#authentication","detail":"the access token was rejected"}';
+/** What the server records when ntfy turns the saved token away. */
+const SIGN_IN_REFUSED =
+  "ntfy refused the sign-in. Check the access token, or the username and password.";
 
-/** One of each: delivered, failed with a long reason, never sent, and turned off. */
+/** One of each: delivered, failed with its reason, never sent, and turned off. */
 const MIXED = () => [
   aWireNotificationConnection({
     id: 1,
@@ -33,7 +35,7 @@ const MIXED = () => [
     {
       id: 2,
       name: "Phone",
-      last_delivery: { at: nowSecs() - 120, ok: false, error: LONG_ERROR },
+      last_delivery: { at: nowSecs() - 120, ok: false, error: SIGN_IN_REFUSED },
     },
     { server_url: "https://ntfy.example.com/sub", topic: "phone" },
   ),
@@ -45,11 +47,7 @@ const MIXED = () => [
     id: 4,
     name: "Shared topic",
     enabled: false,
-    last_delivery: {
-      at: nowSecs() - 86_400,
-      ok: false,
-      error: "not sent: the connection is turned off",
-    },
+    last_delivery: { at: nowSecs() - 86_400, ok: true, error: null },
   }),
 ];
 
@@ -150,7 +148,7 @@ export const TryAgainReadsTheListAgain: Story = {
 };
 
 export const Loaded: Story = {
-  play: async ({ canvas, userEvent }) => {
+  play: async ({ canvas }) => {
     const list = await canvas.findByRole("list", {
       name: "Notification connections",
     });
@@ -172,15 +170,10 @@ export const Loaded: Story = {
     await expect(
       within(phone).getByTestId("notification-last-delivery"),
     ).toHaveTextContent("Failed 2 minutes ago");
-    const error = within(phone).getByTestId("notification-delivery-error");
-    await expect(error).not.toHaveTextContent("the access token was rejected");
-    await userEvent.click(
-      within(error).getByRole("button", { name: "Show all" }),
-    );
-    await expect(error).toHaveTextContent(LONG_ERROR);
+    // The server's sentence, whole.
     await expect(
-      within(error).getByRole("button", { name: "Show less" }),
-    ).toHaveAttribute("aria-expanded", "true");
+      within(phone).getByTestId("notification-delivery-error").textContent,
+    ).toBe(SIGN_IN_REFUSED);
 
     const laptop = await row(canvas, "Laptop");
     await expect(
@@ -196,9 +189,9 @@ export const Loaded: Story = {
         name: "Send notifications to Shared topic",
       }),
     ).not.toBeChecked();
-    await expect(shared).toHaveTextContent(
-      "not sent: the connection is turned off",
-    );
+    await expect(
+      within(shared).getByTestId("notification-last-delivery"),
+    ).toHaveTextContent("Delivered 1 day ago");
     await expect(
       canvas.getByRole("button", { name: "Add connection" }),
     ).not.toHaveClass("primary");
@@ -213,26 +206,68 @@ export const TurnsAConnectionOff: Story = {
     });
     await userEvent.click(toggle);
 
-    await waitFor(() => expect(writes.updated).toHaveLength(1));
-    await expect(writes.updated[0]).toEqual({
-      id: 1,
-      body: {
-        name: "Kitchen tablet",
-        enabled: false,
-        events: ["request_needs_chooser"],
-        settings: {
-          kind: "ntfy",
-          server_url: "https://ntfy.sh",
-          topic: "omnibus-requests",
-          auth: "token",
-          priority: 3,
-          tags: [],
-          include_details: true,
-        },
+    // The switch alone is sent, never the rest of the connection as this page last read it.
+    await waitFor(() => expect(writes.switched).toHaveLength(1));
+    await expect(writes.switched).toEqual([
+      {
+        method: "PATCH",
+        path: "/api/admin/notifications/connections/1",
+        body: { enabled: false },
       },
-    });
+    ]);
+    await expect(writes.updated).toEqual([]);
     await waitFor(() => expect(toggle).not.toBeChecked());
     await expect(toggle).toBeEnabled();
+  },
+};
+
+export const ShowsTheConnectionAsTheServerHoldsItAfterTheSwitch: Story = {
+  beforeEach({ msw }) {
+    // Another admin renamed the kitchen tablet and moved its topic after this page read the list.
+    let edited = false;
+    const elsewhere = (enabled: boolean) =>
+      aWireNotificationConnection(
+        {
+          id: 1,
+          name: "Hall tablet",
+          enabled,
+          last_delivery: { at: nowSecs() - 3 * 3600, ok: true, error: null },
+        },
+        { topic: "omnibus-hall" },
+      );
+    msw.use(
+      http.get(LIST, () =>
+        HttpResponse.json({
+          connections: MIXED().map((c) =>
+            edited && c.id === 1 ? elsewhere(false) : c,
+          ),
+          available_events: ["request_needs_chooser"],
+        }),
+      ),
+      http.patch(`${LIST}/:id`, () => {
+        edited = true;
+        return HttpResponse.json(elsewhere(false));
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    const kitchen = await row(canvas, "Kitchen tablet");
+    await userEvent.click(
+      within(kitchen).getByRole("switch", {
+        name: "Send notifications to Kitchen tablet",
+      }),
+    );
+
+    const hall = await row(canvas, "Hall tablet");
+    await expect(hall).toHaveTextContent("ntfy.sh/omnibus-hall");
+    await expect(
+      within(hall).getByRole("switch", {
+        name: "Send notifications to Hall tablet",
+      }),
+    ).not.toBeChecked();
+    await expect(
+      canvas.queryByRole("listitem", { name: "Kitchen tablet" }),
+    ).not.toBeInTheDocument();
   },
 };
 
@@ -240,7 +275,7 @@ export const ShowsTheSwitchMovingWhileItSaves: Story = {
   beforeEach({ msw }) {
     const gate = deferred();
     msw.use(
-      http.put(`${LIST}/:id`, async () => {
+      http.patch(`${LIST}/:id`, async () => {
         await gate.promise;
         return new HttpResponse(null, { status: 500 });
       }),
@@ -262,7 +297,7 @@ export const ShowsTheSwitchMovingWhileItSaves: Story = {
 export const SaysWhyTurningOffFailed: Story = {
   beforeEach({ msw }) {
     msw.use(
-      http.put(
+      http.patch(
         `${LIST}/:id`,
         () => new HttpResponse("database is locked", { status: 500 }),
       ),
@@ -372,7 +407,7 @@ export const ReadsTheListAgainWhenOneIsGone: Story = {
           available_events: ["request_needs_chooser"],
         });
       }),
-      http.put(
+      http.patch(
         `${LIST}/:id`,
         () =>
           new HttpResponse("notification connection not found", {

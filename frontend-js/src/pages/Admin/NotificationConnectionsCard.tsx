@@ -5,8 +5,8 @@ import {
   type NotificationConnections,
   notificationConnectionsQuery,
   removeNotificationConnection,
-  saveNotificationConnection,
   sendTestNotification,
+  setNotificationConnectionEnabled,
 } from "../../api";
 import { classes } from "../../classes";
 import { Button } from "../../components/Button/Button";
@@ -19,13 +19,11 @@ import {
 import { formatStarted, nowSecs } from "../../format";
 import { NotificationConnectionModal } from "./NotificationConnectionModal";
 import {
-  clipError,
   connectionKey,
   deliveryLine,
   isGone,
   postsTo,
   savedTestOf,
-  toggledInput,
 } from "./notifications";
 
 const DOT_CLASS = {
@@ -33,27 +31,6 @@ const DOT_CLASS = {
   ok: "api-key-dot connected",
   failed: "api-key-dot failed",
 } as const;
-
-/** A failed delivery's reason, cut short when long, with the rest a click away. */
-function DeliveryError({ error }: { error: string }) {
-  const [open, setOpen] = useState(false);
-  const { text, clipped } = clipError(error);
-  return (
-    <p className="notify-error" data-testid="notification-delivery-error">
-      <span translate="no">{open || !clipped ? error : text}</span>
-      {clipped && (
-        <button
-          type="button"
-          className="notify-more"
-          aria-expanded={open}
-          onClick={() => setOpen((was) => !was)}
-        >
-          {open ? "Show less" : "Show all"}
-        </button>
-      )}
-    </p>
-  );
-}
 
 /** How the connection's last finished notification went. */
 function LastDelivery({ connection }: { connection: NotificationConnection }) {
@@ -73,7 +50,12 @@ function LastDelivery({ connection }: { connection: NotificationConnection }) {
           </time>
         )}
       </p>
-      {line.state === "failed" && <DeliveryError error={line.error} />}
+      {line.state === "failed" && (
+        // The server words the reason as a sentence, so it is shown as it comes.
+        <p className="notify-error" data-testid="notification-delivery-error">
+          {line.error}
+        </p>
+      )}
     </>
   );
 }
@@ -110,12 +92,10 @@ function ConnectionRow({
     if (isGone(error)) onGone(connection);
     else note({ message: `${lead}: ${error.message}`, error: true });
   };
+  // Only the switch is sent, and the answer is the connection as the server holds it now, another admin's edits included.
   const toggle = useMutation({
     mutationFn: (enabled: boolean) =>
-      saveNotificationConnection(
-        connection.id,
-        toggledInput(connection, enabled),
-      ),
+      setNotificationConnectionEnabled(connection.id, enabled),
     onMutate: () => setNoted(null),
     onSuccess: onChanged,
   });

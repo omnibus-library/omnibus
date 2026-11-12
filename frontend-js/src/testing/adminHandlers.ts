@@ -771,6 +771,8 @@ export function aWireNotificationConnection(
 export type NotificationWrites = {
   created: unknown[];
   updated: { id: number; body: unknown }[];
+  /** Each switch flip, as the method, path and body it arrived with. */
+  switched: { method: string; path: string; body: unknown }[];
   deleted: number[];
   tested: unknown[];
 };
@@ -824,7 +826,8 @@ function storedSettings(
 
 /**
  * The `/api/admin/notifications` routes over a list of connections: a create adds one, a
- * save replaces one (404 once it is gone), a delete removes one and a test answers 204.
+ * save replaces one (404 once it is gone), a PATCH turns one on or off and changes nothing
+ * else (422 for any body but `{enabled}`), a delete removes one and a test answers 204.
  * A save or test that leaves a secret out where the server wouldn't lend it answers 422.
  * Secrets are never sent back, only whether one is set. The handler records every write.
  */
@@ -886,6 +889,31 @@ export function notificationHandlers(
         };
         connections = connections.map((c) => (c.id === id ? saved : c));
         return HttpResponse.json(saved);
+      },
+    ),
+    http.patch(
+      "/api/admin/notifications/connections/:id",
+      async ({ request, params }) => {
+        const id = idOf(params);
+        const body = await request.json();
+        writes.switched?.push({
+          method: request.method,
+          path: new URL(request.url).pathname,
+          body,
+        });
+        const keys = body && typeof body === "object" ? Object.keys(body) : [];
+        const enabled = (body as { enabled?: unknown } | null)?.enabled;
+        if (keys.length !== 1 || typeof enabled !== "boolean") {
+          return new HttpResponse(
+            'the body must be {"enabled": true or false} and nothing else',
+            { status: 422 },
+          );
+        }
+        const was = connections.find((c) => c.id === id);
+        if (!was) return gone();
+        const switched = { ...was, enabled };
+        connections = connections.map((c) => (c.id === id ? switched : c));
+        return HttpResponse.json(switched);
       },
     ),
     http.delete("/api/admin/notifications/connections/:id", ({ params }) => {

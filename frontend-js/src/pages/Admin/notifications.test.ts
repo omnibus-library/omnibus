@@ -3,7 +3,6 @@ import { ApiError, type NotificationConnection } from "../../api";
 import {
   blankDraft,
   type ConnectionDraft,
-  clipError,
   connectionInputOf,
   connectionKey,
   connectionSchema,
@@ -21,7 +20,6 @@ import {
   secretState,
   settingsInputOf,
   testOf,
-  toggledInput,
 } from "./notifications";
 
 const DRAFT: ConnectionDraft = {
@@ -223,17 +221,6 @@ describe("draftOf", () => {
         include_details: false,
       },
     });
-  });
-});
-
-describe("toggledInput", () => {
-  it("flips the switch and carries no secret", () => {
-    const sent = toggledInput(aConnection(), false);
-
-    expect(sent.enabled).toBe(false);
-    expect(sent.settings).toMatchObject({ auth: "token", priority: 4 });
-    expect(sent.settings).not.toHaveProperty("token");
-    expect(sent.settings).not.toHaveProperty("password");
   });
 });
 
@@ -610,6 +597,8 @@ describe("postsTo", () => {
 
 describe("deliveryLine", () => {
   const NOW = 1_700_010_000;
+  const SIGN_IN_REFUSED =
+    "ntfy refused the sign-in. Check the access token, or the username and password.";
 
   it("says nothing has been delivered yet", () => {
     expect(deliveryLine(null, NOW)).toEqual({
@@ -626,15 +615,12 @@ describe("deliveryLine", () => {
 
   it("says when the last one failed, and why", () => {
     expect(
-      deliveryLine(
-        { at: NOW - 30, ok: false, error: "the server answered 401" },
-        NOW,
-      ),
+      deliveryLine({ at: NOW - 30, ok: false, error: SIGN_IN_REFUSED }, NOW),
     ).toEqual({
       state: "failed",
       text: "Failed just now",
       at: NOW - 30,
-      error: "the server answered 401",
+      error: SIGN_IN_REFUSED,
     });
   });
 
@@ -642,30 +628,5 @@ describe("deliveryLine", () => {
     expect(
       deliveryLine({ at: NOW, ok: false, error: null }, NOW),
     ).toMatchObject({ error: "No reason was recorded." });
-  });
-});
-
-describe("clipError", () => {
-  it("keeps a short error whole", () => {
-    expect(clipError("could not reach the server", 140)).toEqual({
-      text: "could not reach the server",
-      clipped: false,
-    });
-  });
-
-  it("cuts a long error at a word break", () => {
-    const error = `${"word ".repeat(40)}end`;
-
-    const { text, clipped } = clipError(error, 50);
-
-    expect(clipped).toBe(true);
-    expect(text).toBe(`${"word ".repeat(9)}word…`);
-  });
-
-  it("cuts a long error with no spaces at the limit", () => {
-    expect(clipError("x".repeat(60), 50)).toEqual({
-      text: `${"x".repeat(50)}…`,
-      clipped: true,
-    });
   });
 });

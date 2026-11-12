@@ -15,6 +15,7 @@ const TEST = "/api/admin/notifications/test";
 const writes: NotificationWrites = {
   created: [],
   updated: [],
+  switched: [],
   deleted: [],
   tested: [],
 };
@@ -485,7 +486,7 @@ export const TestFailedWithTheProvidersAnswer: Story = {
         TEST,
         () =>
           new HttpResponse(
-            'the server answered 401 Unauthorized: {"code":40101,"error":"unauthorized"}',
+            "ntfy refused the sign-in. Check the access token, or the username and password.",
             { status: 502 },
           ),
       ),
@@ -500,7 +501,7 @@ export const TestFailedWithTheProvidersAnswer: Story = {
     const status = scope.getByTestId("notify-test-status");
     await waitFor(() =>
       expect(status).toHaveTextContent(
-        'Test failed: the server answered 401 Unauthorized: {"code":40101,"error":"unauthorized"}',
+        "Test failed: ntfy refused the sign-in. Check the access token, or the username and password.",
       ),
     );
     await expect(status).toHaveClass("error");
