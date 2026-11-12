@@ -11,11 +11,11 @@ use crate::shelves::{create_shelf, update_shelf};
 use crate::test_support::{forget_read_status, seed_synced_ebook};
 
 /// Migration `0100`'s resend, read from the migration itself so the two cannot drift.
-const KOBO_RESEND: &str = include_str!("../../../migrations/0100_kobo_resend_metadata.sql");
+const KOBO_RESEND: &str = include_str!("../../../../migrations/0100_kobo_resend_metadata.sql");
 
 /// Migration `0103`'s backfill, read from the migration itself like [`KOBO_RESEND`].
 const POSITION_MARKS_READING: &str =
-    include_str!("../../../migrations/0103_position_marks_reading.sql");
+    include_str!("../../../../migrations/0103_position_marks_reading.sql");
 
 async fn make_user(pool: &SqlitePool, username: &str) -> i64 {
     sqlx::query_scalar::<_, i64>(
