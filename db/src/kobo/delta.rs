@@ -2,9 +2,11 @@
 //! device already holds (`kobo_books_sync`) and classify each into an add,
 //! a change, or a removal.
 
+use std::collections::HashMap;
+
 use sqlx::{Row, Sqlite, SqlitePool, Transaction};
 
-use super::{sync_books, KoboBookRow, KoboError};
+use super::{sync_books, KoboBookRow, KoboBookState, KoboError};
 
 /// What `library/sync` should emit for one book on one device.
 #[derive(Debug, Clone, PartialEq)]
@@ -117,21 +119,28 @@ async fn delta(
     Ok(SyncDelta { changes })
 }
 
-/// Rows per chunk for the upsert statement: 3 binds/row keeps each statement
+/// Rows per chunk for the upsert statement: 4 binds/row keeps each statement
 /// comfortably under SQLite's 999 bound-parameter cap.
-const UPSERT_CHUNK_SIZE: usize = 300;
+const UPSERT_CHUNK_SIZE: usize = 200;
 
 /// UUIDs per chunk for the `IN (...)` update/delete statements: 1 bind for
 /// `device_id` plus one per UUID, well under the cap.
 const UUID_CHUNK_SIZE: usize = 900;
 
+/// Rows per chunk for the state-watermark update: 2 binds/row (uuid, stamp) plus
+/// `device_id`.
+const STATE_CHUNK_SIZE: usize = 450;
+
 /// Advance the device's snapshot to match `changes`: upsert the adds and
 /// changes at the `last_modified` they were sent at, clearing any resend mark, and drop the
-/// removals. Call only after the response body is committed to; see [`sync_delta`].
+/// removals. `delivered` holds the states the response carried; each book's watermark is its
+/// state's `state_updated_at`, not a clock time. Call only after the response body is
+/// committed to; see [`sync_delta`].
 pub async fn record_synced(
     pool: &SqlitePool,
     device_id: i64,
     changes: &[SyncChange],
+    delivered: &HashMap<String, KoboBookState>,
 ) -> Result<(), KoboError> {
     if changes.is_empty() {
         return Ok(());
@@ -139,21 +148,21 @@ pub async fn record_synced(
     // Group by kind: one chunked multi-row statement per group, not a round trip
     // per book, so a large library doesn't hold SQLite's writer lock all sync.
     let mut upserts: Vec<&KoboBookRow> = Vec::new();
-    let mut state_changed: Vec<&str> = Vec::new();
+    let mut state_changed: Vec<&KoboBookRow> = Vec::new();
     let mut removed: Vec<&str> = Vec::new();
     for change in changes {
         match change {
             SyncChange::New(book) | SyncChange::Changed(book) => upserts.push(book),
-            SyncChange::StateChanged(book) => state_changed.push(book.uuid.as_str()),
+            SyncChange::StateChanged(book) => state_changed.push(book),
             SyncChange::Removed { book_uuid } => removed.push(book_uuid.as_str()),
         }
     }
 
     let mut tx = pool.begin().await?;
-    upsert_synced(&mut tx, device_id, &upserts).await?;
+    upsert_synced(&mut tx, device_id, &upserts, delivered).await?;
     // State-only: bump the watermark, never `last_modified_seen` — overwriting
     // it here would mark unsent metadata as delivered.
-    touch_state_changed(&mut tx, device_id, &state_changed).await?;
+    touch_state_changed(&mut tx, device_id, &state_changed, delivered).await?;
     delete_removed(&mut tx, device_id, &removed).await?;
     tx.commit().await?;
     Ok(())
@@ -165,9 +174,10 @@ async fn upsert_synced(
     tx: &mut Transaction<'_, Sqlite>,
     device_id: i64,
     books: &[&KoboBookRow],
+    delivered: &HashMap<String, KoboBookState>,
 ) -> Result<(), KoboError> {
     for chunk in books.chunks(UPSERT_CHUNK_SIZE) {
-        let rows = std::iter::repeat_n("(?, ?, ?, strftime('%s','now'))", chunk.len())
+        let rows = std::iter::repeat_n("(?, ?, ?, ?)", chunk.len())
             .collect::<Vec<_>>()
             .join(", ");
         let sql = format!(
@@ -184,33 +194,45 @@ async fn upsert_synced(
             q = q
                 .bind(device_id)
                 .bind(&book.uuid)
-                .bind(book.last_modified_epoch);
+                .bind(book.last_modified_epoch)
+                .bind(delivered_stamp(delivered, &book.uuid));
         }
         q.execute(&mut **tx).await?;
     }
     Ok(())
 }
 
-/// Bump `synced_at` for every book whose reading state moved but whose
-/// metadata didn't, chunked to stay under SQLite's bound-parameter limit.
+/// A book's delivered state stamp, 0 when it has no state yet.
+fn delivered_stamp(delivered: &HashMap<String, KoboBookState>, uuid: &str) -> i64 {
+    delivered.get(uuid).map_or(0, |s| s.state_updated_at)
+}
+
+/// Set `synced_at` to the delivered stamp for every book whose reading state moved but
+/// whose metadata didn't, one statement per chunk to stay under SQLite's bound-parameter
+/// limit.
 async fn touch_state_changed(
     tx: &mut Transaction<'_, Sqlite>,
     device_id: i64,
-    uuids: &[&str],
+    books: &[&KoboBookRow],
+    delivered: &HashMap<String, KoboBookState>,
 ) -> Result<(), KoboError> {
-    for chunk in uuids.chunks(UUID_CHUNK_SIZE) {
-        let placeholders = std::iter::repeat_n("?", chunk.len())
+    for chunk in books.chunks(STATE_CHUNK_SIZE) {
+        let pairs = std::iter::repeat_n("(?, ?)", chunk.len())
             .collect::<Vec<_>>()
-            .join(",");
+            .join(", ");
         let sql = format!(
-            "UPDATE kobo_books_sync SET synced_at = strftime('%s','now')
-              WHERE device_id = ? AND book_uuid IN ({placeholders})"
+            // SQLite names a VALUES table's columns `column1`, `column2`: (uuid, stamp).
+            "UPDATE kobo_books_sync SET synced_at = v.column2
+               FROM (VALUES {pairs}) AS v
+              WHERE kobo_books_sync.device_id = ? AND kobo_books_sync.book_uuid = v.column1"
         );
-        let mut q = sqlx::query(&sql).bind(device_id);
-        for uuid in chunk {
-            q = q.bind(*uuid);
+        let mut q = sqlx::query(&sql);
+        for book in chunk {
+            q = q
+                .bind(&book.uuid)
+                .bind(delivered_stamp(delivered, &book.uuid));
         }
-        q.execute(&mut **tx).await?;
+        q.bind(device_id).execute(&mut **tx).await?;
     }
     Ok(())
 }
@@ -286,8 +308,8 @@ async fn delete_removed(
 /// What a device already holds for one book.
 struct Held {
     last_modified_seen: i64,
-    /// When this row was last sent — the watermark a state change is newer
-    /// than, since reading state carries no `last_modified` of its own.
+    /// The `state_updated_at` of the state last sent, not a clock time — the watermark a
+    /// state change is newer than, since reading state carries no `last_modified` of its own.
     synced_at: i64,
     /// Set by a fresh sync until `record_synced` lands the book again.
     resend: bool,

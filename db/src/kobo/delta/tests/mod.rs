@@ -64,10 +64,43 @@ async fn synced_shelf(pool: &SqlitePool, owner: i64, name: &str, uuids: &[String
     shelf.id
 }
 
-/// Drive one full sync: compute the delta, then commit it.
+mod state_watermark;
+
+/// The states the server loads for a page of `changes`, as `library_sync` does.
+async fn page_states(
+    pool: &SqlitePool,
+    user: i64,
+    changes: &[SyncChange],
+) -> HashMap<String, KoboBookState> {
+    let uuids: Vec<String> = changes
+        .iter()
+        .filter_map(|change| match change {
+            SyncChange::New(b) | SyncChange::Changed(b) | SyncChange::StateChanged(b) => {
+                Some(b.uuid.clone())
+            }
+            SyncChange::Removed { .. } => None,
+        })
+        .collect();
+    crate::kobo::reading_state_for(pool, user, &uuids)
+        .await
+        .unwrap()
+}
+
+/// The server's clock in whole seconds, the one `state_updated_at` is clamped to.
+async fn server_now(pool: &SqlitePool) -> i64 {
+    sqlx::query_scalar("SELECT CAST(strftime('%s','now') AS INTEGER)")
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// Drive one full sync: compute the delta, then commit it with the states it delivered.
 async fn sync_once(pool: &SqlitePool, user: i64, device: i64) -> SyncDelta {
     let delta = sync_delta(pool, user, device).await.unwrap();
-    record_synced(pool, device, &delta.changes).await.unwrap();
+    let states = page_states(pool, user, &delta.changes).await;
+    record_synced(pool, device, &delta.changes, &states)
+        .await
+        .unwrap();
     delta
 }
 
@@ -224,8 +257,13 @@ async fn record_synced_is_idempotent_for_a_repeated_change() {
     synced_shelf(&pool, user, "Kobo", std::slice::from_ref(&uuid)).await;
 
     let delta = sync_delta(&pool, user, device).await.unwrap();
-    record_synced(&pool, device, &delta.changes).await.unwrap();
-    record_synced(&pool, device, &delta.changes).await.unwrap();
+    let states = page_states(&pool, user, &delta.changes).await;
+    record_synced(&pool, device, &delta.changes, &states)
+        .await
+        .unwrap();
+    record_synced(&pool, device, &delta.changes, &states)
+        .await
+        .unwrap();
 
     let held: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM kobo_books_sync WHERE device_id = ?")
         .bind(device)
@@ -308,7 +346,10 @@ async fn record_synced_clears_the_pending_mark_a_fresh_sync_left() {
     sync_once(&pool, user, device).await;
     let fresh = fresh_sync_delta(&pool, user, device).await.unwrap();
 
-    record_synced(&pool, device, &fresh.changes).await.unwrap();
+    let states = page_states(&pool, user, &fresh.changes).await;
+    record_synced(&pool, device, &fresh.changes, &states)
+        .await
+        .unwrap();
 
     assert!(sync_delta(&pool, user, device).await.unwrap().is_empty());
 }
@@ -359,7 +400,10 @@ async fn sync_delta_still_owes_a_removal_when_a_book_is_opted_out_between_pages(
         .into_iter()
         .filter(|change| matches!(change, SyncChange::New(b) if b.uuid == kept))
         .collect();
-    record_synced(&pool, device, &kept_only).await.unwrap();
+    let states = page_states(&pool, user, &kept_only).await;
+    record_synced(&pool, device, &kept_only, &states)
+        .await
+        .unwrap();
     crate::shelves::remove_book(&pool, shelf, &gone)
         .await
         .unwrap();
@@ -454,10 +498,7 @@ async fn sync_delta_announces_an_offline_status_dated_before_the_devices_last_sy
     let uuid = seed_synced_ebook(&pool, "a.epub", "A", "Author").await;
     synced_shelf(&pool, user, "Kobo", std::slice::from_ref(&uuid)).await;
     sync_once(&pool, user, device).await;
-    let synced_at: i64 = sqlx::query_scalar("SELECT synced_at FROM kobo_books_sync")
-        .fetch_one(&pool)
-        .await
-        .unwrap();
+    let now = server_now(&pool).await;
 
     let mut tx = pool.begin_with("BEGIN IMMEDIATE").await.unwrap();
     crate::read_status::set_read_status_at_tx(
@@ -467,7 +508,7 @@ async fn sync_delta_announces_an_offline_status_dated_before_the_devices_last_sy
             book_uuid: uuid.clone(),
             status: omnibus_shared::ReadStatus::Finished,
         },
-        synced_at - 100,
+        now - 100,
     )
     .await
     .unwrap();
@@ -501,7 +542,9 @@ async fn recording_a_state_change_preserves_last_modified_seen() {
         .await
         .unwrap()
         .unwrap();
-    record_synced(&pool, device, &[SyncChange::StateChanged(row)])
+    let changes = [SyncChange::StateChanged(row)];
+    let states = page_states(&pool, user, &changes).await;
+    record_synced(&pool, device, &changes, &states)
         .await
         .unwrap();
 
@@ -534,6 +577,23 @@ fn synthetic_book(n: usize, last_modified_epoch: i64) -> KoboBookRow {
     }
 }
 
+/// A delivered state with only its clock set.
+fn state_at(state_updated_at: i64) -> KoboBookState {
+    KoboBookState {
+        status: omnibus_shared::ReadStatus::Reading,
+        percent: None,
+        kobo_location: None,
+        epub_cfi: None,
+        koreader_xpointer: None,
+        koreader_percentage: None,
+        book_file_id: None,
+        state_updated_at,
+        progress_updated_at: 0,
+        status_updated_at: 0,
+        statistics: None,
+    }
+}
+
 #[tokio::test]
 async fn record_synced_applies_every_group_across_multiple_chunks() {
     // Large enough in every bucket (upsert, state-changed, removed) to force
@@ -549,7 +609,9 @@ async fn record_synced_applies_every_group_across_multiple_chunks() {
     let seed: Vec<SyncChange> = (0..1950)
         .map(|n| SyncChange::New(synthetic_book(n, 1)))
         .collect();
-    record_synced(&pool, device, &seed).await.unwrap();
+    record_synced(&pool, device, &seed, &HashMap::new())
+        .await
+        .unwrap();
 
     let mut batch = Vec::new();
     batch.extend((0..350).map(|n| SyncChange::New(synthetic_book(2000 + n, 1))));
@@ -564,7 +626,12 @@ async fn record_synced_applies_every_group_across_multiple_chunks() {
         "sanity: every bucket crosses its chunk size"
     );
 
-    record_synced(&pool, device, &batch).await.unwrap();
+    let delivered: HashMap<String, KoboBookState> = (50..1000)
+        .map(|n| (format!("synthetic-{n:05}"), state_at(7000 + n as i64)))
+        .collect();
+    record_synced(&pool, device, &batch, &delivered)
+        .await
+        .unwrap();
 
     let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM kobo_books_sync WHERE device_id = ?")
         .bind(device)
@@ -595,6 +662,18 @@ async fn record_synced_applies_every_group_across_multiple_chunks() {
         state_changed_seen, 1,
         "a StateChanged row's metadata watermark must not move"
     );
+
+    for n in [50, 499, 500, 999] {
+        let watermark: i64 = sqlx::query_scalar(
+            "SELECT synced_at FROM kobo_books_sync WHERE device_id = ? AND book_uuid = ?",
+        )
+        .bind(device)
+        .bind(format!("synthetic-{n:05}"))
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(watermark, 7000 + n, "row {n} gets its own delivered stamp");
+    }
 
     let last_new: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM kobo_books_sync WHERE device_id = ? AND book_uuid = ?",
@@ -768,13 +847,17 @@ async fn position_marks_reading_migration_reannounces_a_backfilled_book_to_a_dev
         .unwrap();
 
     let zeroed: Vec<String> = sqlx::query_scalar(
-        "SELECT book_uuid FROM kobo_books_sync WHERE device_id = ? AND synced_at = 0",
+        "SELECT book_uuid FROM kobo_books_sync WHERE device_id = ? AND synced_at = 0
+          ORDER BY book_uuid",
     )
     .bind(device)
     .fetch_all(&pool)
     .await
     .unwrap();
-    assert_eq!(zeroed, vec![dune.clone()]);
+    // `gatsby` held no state of the reader's, so its watermark was already 0.
+    let mut expected = vec![dune.clone(), gatsby.clone()];
+    expected.sort();
+    assert_eq!(zeroed, expected);
     let delta = sync_once(&pool, user, device).await;
     assert_eq!(delta.len(), 1);
     assert!(matches!(&delta.changes[0], SyncChange::StateChanged(b) if b.uuid == dune));

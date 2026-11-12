@@ -462,7 +462,7 @@ async fn sync_stream_close(
     device_id: i64,
     mut st: SyncStreamState,
 ) -> (Result<Bytes, std::io::Error>, SyncStreamState) {
-    if let Err(e) = db::kobo::record_synced(pool, device_id, &st.changes).await {
+    if let Err(e) = db::kobo::record_synced(pool, device_id, &st.changes, &st.states).await {
         tracing::warn!(device_id, error = %e, "kobo snapshot advance failed");
     }
     st.phase = SyncPhase::End;
