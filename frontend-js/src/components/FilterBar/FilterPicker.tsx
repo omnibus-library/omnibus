@@ -19,6 +19,7 @@ import {
   fieldPlural,
   formatOptions,
   isPicked,
+  MAX_FILTER_TOTAL_VALUES,
   MAX_FILTER_VALUES,
   MAX_SHOWN_OPTIONS,
   matching,
@@ -93,6 +94,8 @@ function useOptions(field: FilterField): Loaded {
 type PickerProps = {
   /** The clause the menu opens on: its field, mode and values. */
   initial: FilterClause;
+  /** How many values the clause may hold: what its own cap and the filter's total leave. */
+  limit: number;
   onApply: (clause: FilterClause) => void;
   onClose: () => void;
 };
@@ -101,12 +104,14 @@ function Rows({
   plural,
   query,
   picked,
+  limit,
   list,
   onToggle,
 }: {
   plural: string;
   query: string;
   picked: string[];
+  limit: number;
   list: OptionList;
   onToggle: (value: string) => void;
 }) {
@@ -120,7 +125,7 @@ function Rows({
   if (found.total === 0) {
     return <p className="fb-empty">{noMatchLine(plural, query, list.cap)}</p>;
   }
-  const atCap = picked.length >= MAX_FILTER_VALUES;
+  const atCap = picked.length >= limit;
   const status = statusLine(plural, found.shown.length, found.total, list.cap);
   return (
     <>
@@ -150,7 +155,9 @@ function Rows({
       {status && <p className="fb-status">{status}</p>}
       {atCap && (
         <p className="fb-status">
-          At most {MAX_FILTER_VALUES} values per filter
+          {limit === MAX_FILTER_VALUES
+            ? `At most ${MAX_FILTER_VALUES} values per filter`
+            : `At most ${MAX_FILTER_TOTAL_VALUES} values across all filters`}
         </p>
       )}
     </>
@@ -158,7 +165,12 @@ function Rows({
 }
 
 /** A facet's menu: include or exclude, then a searchable multi-select of the field's values. */
-export function FilterPicker({ initial, onApply, onClose }: PickerProps) {
+export function FilterPicker({
+  initial,
+  limit,
+  onApply,
+  onClose,
+}: PickerProps) {
   const field = initial.field;
   const [mode, setMode] = useState<FilterMode>(initial.mode);
   const [query, setQuery] = useState("");
@@ -239,8 +251,11 @@ export function FilterPicker({ initial, onApply, onClose }: PickerProps) {
                 plural={plural}
                 query={query}
                 picked={picked}
+                limit={limit}
                 list={withStranded(loaded.list, picked, field)}
-                onToggle={(value) => setPicked(togglePick(picked, value))}
+                onToggle={(value) =>
+                  setPicked(togglePick(picked, value, limit))
+                }
               />
             )}
           </div>

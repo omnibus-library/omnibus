@@ -73,6 +73,35 @@ describe("loadPrefs", () => {
     });
   });
 
+  it("stops reading stored facet values once the total the API allows is reached", () => {
+    const facet = (name: string) =>
+      Array.from({ length: 64 }, (_, i) => `${name}-${i}`);
+    localStorage.setItem(
+      "omnibus.view_prefs::/books",
+      JSON.stringify({
+        view_mode: "grid",
+        sort_key: "title",
+        sort_dir: "asc",
+        filters: {
+          authors: facet("a"),
+          series: facet("s"),
+          formats: facet("f"),
+          tags: facet("t"),
+          genres: facet("g"),
+        },
+      }),
+    );
+
+    const clauses = loadPrefs("/books").clauses;
+
+    expect(clauses.map((c) => [c.field, c.values.length])).toEqual([
+      ["author", 64],
+      ["series", 64],
+      ["format", 64],
+      ["tag", 8],
+    ]);
+  });
+
   it("leaves out the stored facet values the API would refuse", () => {
     const tooLong = "x".repeat(513);
     localStorage.setItem(

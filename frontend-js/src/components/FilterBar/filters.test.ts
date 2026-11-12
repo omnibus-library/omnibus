@@ -4,10 +4,12 @@ import { aShelf, userId } from "../../testing/books";
 import {
   facetValue,
   formatOptions,
+  MAX_FILTER_TOTAL_VALUES,
   MAX_FILTER_VALUES,
   matching,
   namedOptions,
   noMatchLine,
+  pickLimit,
   revealBelow,
   shelfLabel,
   shelfOptions,
@@ -55,6 +57,51 @@ describe("togglePick", () => {
 
     expect(togglePick(full, "extra")).toBe(full);
     expect(togglePick(full, "v0")).toHaveLength(MAX_FILTER_VALUES - 1);
+  });
+
+  it("refuses a new pick past a smaller limit", () => {
+    const picked = ["a", "b"];
+
+    expect(togglePick(picked, "c", 2)).toBe(picked);
+    expect(togglePick(picked, "c", 3)).toEqual(["a", "b", "c"]);
+  });
+});
+
+describe("pickLimit", () => {
+  const clause = (
+    field: FilterClause["field"],
+    count: number,
+  ): FilterClause => ({
+    field,
+    mode: "include",
+    values: Array.from({ length: count }, (_, i) => `v${i}`),
+  });
+
+  it("is the per-clause cap while the rest of the filter leaves room", () => {
+    expect(pickLimit([clause("tag", 10)], "genre")).toBe(MAX_FILTER_VALUES);
+  });
+
+  it("is what the other clauses leave of the total, ignoring the field's own values", () => {
+    const clauses = [
+      clause("author", 64),
+      clause("series", 64),
+      clause("format", 30),
+      clause("tag", 30),
+    ];
+
+    expect(pickLimit(clauses, "genre")).toBe(MAX_FILTER_TOTAL_VALUES - 188);
+    expect(pickLimit(clauses, "tag")).toBe(MAX_FILTER_TOTAL_VALUES - 158);
+  });
+
+  it("is zero, never negative, for a filter saved past the total", () => {
+    const clauses = [
+      clause("author", 64),
+      clause("series", 64),
+      clause("format", 64),
+      clause("tag", 64),
+    ];
+
+    expect(pickLimit(clauses, "genre")).toBe(0);
   });
 });
 
