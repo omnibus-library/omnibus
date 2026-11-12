@@ -92,6 +92,7 @@ mod server {
         }
         spawn_annotation_cfi_backfill(pool.clone());
         spawn_annotation_downsync(pool.clone(), worker.clone());
+        spawn_notification_drain(pool.clone());
 
         let router = build_router(state, pool, worker, port);
         Ok(apply_security_headers(router))
@@ -287,6 +288,30 @@ mod server {
                 tokio::select! {
                     () = tokio::time::sleep(wait) => {}
                     () = kick.notified() => {}
+                }
+            }
+        });
+    }
+
+    /// Spawn the loop that sends queued notifications to their connections. Always on, as
+    /// connections are general; it waits as long as `drain_tick` says, or less when a newly
+    /// queued notification kicks it. Without an HTTP client nothing could be sent, so the
+    /// loop is not started and the queue keeps until a restart that has one.
+    fn spawn_notification_drain(pool: SqlitePool) {
+        let client = match omnibus_db::notify::http_client() {
+            Ok(client) => client,
+            Err(error) => {
+                tracing::error!(%error, "build the notification HTTP client; notifications stay queued");
+                return;
+            }
+        };
+        tokio::spawn(async move {
+            let mut last_prune = None;
+            loop {
+                let wait = omnibus_db::notify::drain_tick(&pool, &client, &mut last_prune).await;
+                tokio::select! {
+                    () = tokio::time::sleep(wait) => {}
+                    () = omnibus_db::notify::kicked() => {}
                 }
             }
         });

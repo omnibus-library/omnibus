@@ -849,6 +849,188 @@
         }
       }
     },
+    "/api/admin/notifications/connections": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "List notification connections",
+        "description": "Every notification connection, sorted by name, each with how its last finished\nnotification went, and the events this server offers now. Tokens and passwords are\nnever returned; `token_set` and `password_set` say whether one is saved. Needs an admin\naccount.",
+        "operationId": "list_notification_connections",
+        "responses": {
+          "200": {
+            "description": "The connections and the events on offer.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationConnections"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You aren't an admin."
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Create a notification connection",
+        "description": "Saves a new connection. A token or password left out is simply not set. Needs an admin\naccount.",
+        "operationId": "create_notification_connection",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotificationConnectionInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "The connection is saved; the body is what is now set.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationConnection"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You aren't an admin."
+          },
+          "422": {
+            "description": "A field isn't valid, such as a blank name, a topic with other characters, or `token` auth without a token; the body says which."
+          }
+        }
+      }
+    },
+    "/api/admin/notifications/connections/{id}": {
+      "put": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Replace a notification connection",
+        "description": "Replaces every field of a saved connection. A token or password left out or null keeps\nthe saved one, and an empty string clears it; switching `auth` drops the old mode's\nsecrets. Needs an admin account.",
+        "operationId": "update_notification_connection",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The connection's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotificationConnectionInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The connection is saved; the body is what is now set.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationConnection"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You aren't an admin."
+          },
+          "404": {
+            "description": "No connection has that id."
+          },
+          "422": {
+            "description": "A field isn't valid, or the change leaves `token` or `basic` auth without its secret; the body says which. Nothing is saved."
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Delete a notification connection",
+        "description": "Deletes a connection, with every notification queued or sent for it. Needs an admin\naccount.",
+        "operationId": "delete_notification_connection",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The connection's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The connection is deleted."
+          },
+          "403": {
+            "description": "You aren't an admin."
+          },
+          "404": {
+            "description": "No connection has that id."
+          }
+        }
+      }
+    },
+    "/api/admin/notifications/test": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Send a test notification",
+        "description": "Sends a test message with the given settings straight away, without saving them. With\n`id`, a token or password the settings leave out is taken from that saved connection, as\nsaving would; an unsaved connection gives every secret it needs. The message links to\nthe public server URL when one is set. Needs an admin account.",
+        "operationId": "test_notification_connection",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotificationTest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "The provider accepted the test message."
+          },
+          "403": {
+            "description": "You aren't an admin."
+          },
+          "404": {
+            "description": "`id` names no saved connection."
+          },
+          "422": {
+            "description": "A setting isn't valid; the body says which."
+          },
+          "502": {
+            "description": "The provider couldn't be reached or refused the message; the body carries its answer."
+          }
+        }
+      }
+    },
     "/api/admin/requests/settings": {
       "get": {
         "tags": [
@@ -12096,6 +12278,62 @@
           }
         }
       },
+      "ConnectionSettingsInput": {
+        "oneOf": [
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NtfySettingsInput",
+                "description": "An ntfy server and topic."
+              },
+              {
+                "type": "object",
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "ntfy"
+                    ]
+                  }
+                }
+              }
+            ],
+            "description": "An ntfy server and topic."
+          }
+        ],
+        "description": "A connection's provider settings as a client sends them. `kind` names the provider."
+      },
+      "ConnectionSettingsStatus": {
+        "oneOf": [
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NtfySettingsStatus",
+                "description": "An ntfy server and topic."
+              },
+              {
+                "type": "object",
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "ntfy"
+                    ]
+                  }
+                }
+              }
+            ],
+            "description": "An ntfy server and topic."
+          }
+        ],
+        "description": "A connection's provider settings as the server returns them, with no secret in them."
+      },
       "ContentSearchHit": {
         "type": "object",
         "description": "One chapter that matches a content search, with an excerpt around the match.",
@@ -14835,6 +15073,282 @@
           "month": {
             "type": "string",
             "description": "The month, as `YYYY-MM` in your time zone."
+          }
+        }
+      },
+      "NotificationConnection": {
+        "type": "object",
+        "description": "A saved notification connection.",
+        "required": [
+          "id",
+          "name",
+          "enabled",
+          "events",
+          "settings"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NotificationEvent"
+            }
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "last_delivery": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NotificationLastDelivery",
+                "description": "How its most recent finished notification went; null when none has finished yet."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/ConnectionSettingsStatus"
+          }
+        }
+      },
+      "NotificationConnectionInput": {
+        "type": "object",
+        "description": "A notification connection to create, or what to replace a saved one with.",
+        "required": [
+          "name",
+          "events",
+          "settings"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "Whether the connection sends anything. True when left out."
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NotificationEvent"
+            },
+            "description": "The events the connection is sent. May be empty; a repeated event counts once. An\nevent the server doesn't offer now is saved, and sent once it does."
+          },
+          "name": {
+            "type": "string",
+            "description": "A name to tell the connection by, 1 to 100 characters once trimmed."
+          },
+          "settings": {
+            "$ref": "#/components/schemas/ConnectionSettingsInput"
+          }
+        }
+      },
+      "NotificationConnections": {
+        "type": "object",
+        "description": "Every notification connection, sorted by name, and the events the server offers.",
+        "required": [
+          "connections",
+          "available_events"
+        ],
+        "properties": {
+          "available_events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NotificationEvent"
+            },
+            "description": "The events a connection can be sent on this server now. `request_needs_chooser`\nis listed only while book requests are on."
+          },
+          "connections": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NotificationConnection"
+            }
+          }
+        }
+      },
+      "NotificationEvent": {
+        "type": "string",
+        "description": "Something the server can send a notification about.",
+        "enum": [
+          "request_needs_chooser"
+        ]
+      },
+      "NotificationLastDelivery": {
+        "type": "object",
+        "description": "How the most recent notification a connection finished with went.",
+        "required": [
+          "at",
+          "ok"
+        ],
+        "properties": {
+          "at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "When it was delivered or given up on, in Unix seconds."
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why it was given up on, such as the provider's answer. Null when `ok`."
+          },
+          "ok": {
+            "type": "boolean",
+            "description": "True when the provider accepted it; false when it was given up on."
+          }
+        }
+      },
+      "NotificationTest": {
+        "type": "object",
+        "description": "Settings to send a test notification with.",
+        "required": [
+          "settings"
+        ],
+        "properties": {
+          "id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "A saved connection whose token or password fills in one `settings` leaves out, as\nsaving would. Null for a connection not saved yet."
+          },
+          "settings": {
+            "$ref": "#/components/schemas/ConnectionSettingsInput"
+          }
+        }
+      },
+      "NtfyAuth": {
+        "type": "string",
+        "description": "How the server signs in to an ntfy server.",
+        "enum": [
+          "none",
+          "token",
+          "basic"
+        ]
+      },
+      "NtfySettingsInput": {
+        "type": "object",
+        "description": "The settings of an ntfy connection, as a client sends them.",
+        "required": [
+          "server_url",
+          "topic",
+          "auth"
+        ],
+        "properties": {
+          "auth": {
+            "$ref": "#/components/schemas/NtfyAuth"
+          },
+          "include_details": {
+            "type": "boolean",
+            "description": "Whether a message names the book and who asked for it. Off, it says only that\nsomething needs attention, for a topic others can read. True when left out."
+          },
+          "password": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The password, used when `auth` is `basic`. Null or left out keeps the saved\npassword; an empty string clears it."
+          },
+          "priority": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The message priority, from 1 (lowest) to 5 (highest). 3, ntfy's default, when left out.",
+            "default": 3,
+            "maximum": 5,
+            "minimum": 1
+          },
+          "server_url": {
+            "type": "string",
+            "description": "The ntfy server's address, such as `https://ntfy.sh`, or `https://example.com/ntfy`\nfor one served under a sub-path. It must not carry a login, query or fragment."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tags ntfy shows on the message; a tag naming an emoji shows as that emoji. Each is\nnon-blank and has no comma."
+          },
+          "token": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The access token, used when `auth` is `token`. Null or left out keeps the saved\ntoken; an empty string clears it."
+          },
+          "topic": {
+            "type": "string",
+            "description": "The topic to publish to: 1 to 64 letters, digits, `-` or `_`."
+          },
+          "username": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The username to sign in with. Required when `auth` is `basic`; ignored otherwise."
+          }
+        }
+      },
+      "NtfySettingsStatus": {
+        "type": "object",
+        "description": "The settings of an ntfy connection as the server returns them: whether a token or\npassword is saved, never its value.",
+        "required": [
+          "server_url",
+          "topic",
+          "auth",
+          "token_set",
+          "password_set",
+          "priority",
+          "tags",
+          "include_details"
+        ],
+        "properties": {
+          "auth": {
+            "$ref": "#/components/schemas/NtfyAuth"
+          },
+          "include_details": {
+            "type": "boolean",
+            "description": "Whether a message names the book and who asked for it."
+          },
+          "password_set": {
+            "type": "boolean",
+            "description": "Whether a password is saved."
+          },
+          "priority": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The message priority, from 1 (lowest) to 5 (highest).",
+            "minimum": 0
+          },
+          "server_url": {
+            "type": "string",
+            "description": "The ntfy server's address, without a trailing slash."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "token_set": {
+            "type": "boolean",
+            "description": "Whether a token is saved."
+          },
+          "topic": {
+            "type": "string"
+          },
+          "username": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The username, when `auth` is `basic`."
           }
         }
       },
