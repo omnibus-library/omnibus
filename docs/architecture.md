@@ -88,6 +88,16 @@ keeps its own offline store and outbox — see [ios.md](ios.md).
 Every client — web, iOS, MCP — speaks that one REST surface, so a feature has
 one handler, one permission gate and one error mapping.
 
+**Notifications (outbound):** a change that warrants one queues a row per
+subscribed connection in `notification_deliveries`, inside the change's own
+transaction (`requests::store::finish_search` → `notify::enqueue_*`, in a
+savepoint so a failure never costs the change), so it is queued once and
+survives a restart. The drain loop `main.rs` spawns claims due rows, renders
+each for its provider and sends it (`db::notify`), retrying with backoff; a row
+whose connection was turned off, or whose event no longer needs anyone, is
+dropped unsent. The admin routes in `backend::notifications` manage the
+connections.
+
 ## The REST contract
 
 [`openapi/openapi.json`](../openapi/openapi.json) is the OpenAPI 3.1 contract
