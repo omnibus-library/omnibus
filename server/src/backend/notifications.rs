@@ -81,9 +81,10 @@ pub(super) async fn create_connection(
 /// Replaces every field of a saved connection. A token or password left out or null keeps
 /// the saved one, and an empty string clears it; switching `auth` drops the old mode's
 /// secrets. A saved secret is kept only for the address it was saved for: when
-/// `server_url` changes, or for a password the `username`, it must be given again. To switch
-/// a connection on or off, use `PATCH` on the same path, which changes nothing else. Needs an
-/// admin account.
+/// `server_url` changes, or for a password the `username`, it must be given again. Saving
+/// it with `enabled` false deletes every notification still waiting to be sent on it, as the
+/// switch does. To switch a connection on or off, use `PATCH` on the same path, which
+/// changes nothing else. Needs an admin account.
 #[utoipa::path(
     put,
     path = "/api/admin/notifications/connections/{id}",
@@ -113,8 +114,9 @@ pub(super) async fn update_connection(
 /// Turn a notification connection on or off
 ///
 /// Switches a connection on or off and changes nothing else, so it can't undo another
-/// admin's edit of the name, settings or events. A connection that is off sends nothing, and
-/// what was queued for it is dropped unsent. Needs an admin account.
+/// admin's edit of the name, settings or events. Switching off deletes every notification
+/// still waiting to be sent on it, retries included, so switching back on sends only what
+/// happens after. A connection that is off sends nothing. Needs an admin account.
 #[utoipa::path(
     patch,
     path = "/api/admin/notifications/connections/{id}",

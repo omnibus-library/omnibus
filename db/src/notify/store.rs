@@ -2,7 +2,9 @@
 //! delete, and the list each connection shows with how its last finished notification went.
 //! Every write is checked here first, and an update merges over the saved row in one write
 //! transaction, so a secret left out is kept even when two saves race. The on/off switch
-//! writes its one column alone, so it can't undo a concurrent edit of the rest.
+//! writes its one column alone, so it can't undo a concurrent edit of the rest. Turning a
+//! connection off, by either route, deletes what was still queued for it in the same
+//! transaction, so turning it back on never sends an old notification.
 
 use omnibus_shared::{
     NotificationConnection, NotificationConnectionInput, NotificationEvent,
@@ -129,8 +131,9 @@ pub async fn create_connection(
     Ok(wire(id, draft, None))
 }
 
-/// Replace connection `id` with `input`, keeping each saved secret it leaves out.
-/// [`NotifyError::NotFound`] when no connection has that id.
+/// Replace connection `id` with `input`, keeping each saved secret it leaves out; turning
+/// it off deletes what was still queued for it. [`NotifyError::NotFound`] when no
+/// connection has that id.
 pub async fn update_connection(
     pool: &SqlitePool,
     id: i64,
@@ -152,13 +155,17 @@ pub async fn update_connection(
     .bind(id)
     .execute(&mut *tx)
     .await?;
+    if !draft.enabled {
+        drop_queued(&mut tx, id).await?;
+    }
     let last = last_delivery(&mut tx, id).await?;
     tx.commit().await?;
     Ok(wire(id, draft, last))
 }
 
 /// Switch connection `id` on or off, changing nothing but `enabled` and `updated_at`, and
-/// return it as the list shows it. [`NotifyError::NotFound`] when no connection has that id.
+/// return it as the list shows it. Switching off also deletes what was still queued for it.
+/// [`NotifyError::NotFound`] when no connection has that id.
 pub async fn set_connection_enabled(
     pool: &SqlitePool,
     id: i64,
@@ -175,6 +182,9 @@ pub async fn set_connection_enabled(
     .rows_affected();
     if switched == 0 {
         return Err(NotifyError::NotFound);
+    }
+    if !enabled {
+        drop_queued(&mut tx, id).await?;
     }
     let row = sqlx::query(&format!("{} WHERE c.id = ?", with_last_delivery()))
         .bind(id)
@@ -196,6 +206,16 @@ pub async fn delete_connection(pool: &SqlitePool, id: i64) -> Result<(), NotifyE
     if deleted == 0 {
         return Err(NotifyError::NotFound);
     }
+    Ok(())
+}
+
+/// Delete every notification still queued for connection `id`, unsent. One a drain pass is
+/// sending right now still goes; its record then finds no row.
+async fn drop_queued(conn: &mut SqliteConnection, id: i64) -> Result<(), NotifyError> {
+    sqlx::query("DELETE FROM notification_deliveries WHERE connection_id = ? AND state = 'queued'")
+        .bind(id)
+        .execute(&mut *conn)
+        .await?;
     Ok(())
 }
 

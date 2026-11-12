@@ -12,7 +12,8 @@ use crate::test_support::{file_db_url, reopen_file_pool, EnvVarGuard};
 
 use super::super::outbox::backoff;
 use super::super::test_support::{
-    chooser_event, deliveries, request_in_choose, save_connection, Delivery,
+    chooser_event, connection_input, deliveries, ntfy_input, request_in_choose, save_connection,
+    Delivery,
 };
 use super::*;
 
@@ -186,8 +187,88 @@ mod drain_due {
         );
     }
 
+    /// A connection to `server` with one delivered notification, and a second one waiting
+    /// out a backoff. Returns the connection's id and its last delivery.
+    async fn one_sent_and_one_in_backoff(
+        pool: &SqlitePool,
+        server: &MockServer,
+    ) -> (i64, Option<omnibus_shared::NotificationLastDelivery>) {
+        let request = queued_for(pool, server).await;
+        drain_due(pool, &client()).await.unwrap();
+        let connection = deliveries(pool).await[0].connection_id;
+        let waiting = queue_event(pool, connection, request).await;
+        set(
+            pool,
+            &format!(
+                "UPDATE notification_deliveries
+                    SET attempts = 1, last_error = 'x', next_attempt_at = strftime('%s', 'now') + 600
+                  WHERE id = {waiting}"
+            ),
+        )
+        .await;
+        let last = list_connections(pool).await.unwrap()[0]
+            .last_delivery
+            .clone();
+        (connection, last)
+    }
+
+    async fn assert_only_the_first_was_ever_sent(
+        pool: &SqlitePool,
+        server: &MockServer,
+        last: Option<omnibus_shared::NotificationLastDelivery>,
+    ) {
+        set(
+            pool,
+            "UPDATE notification_deliveries SET next_attempt_at = 0 WHERE state = 'queued'",
+        )
+        .await;
+        let drained = drain_due(pool, &client()).await.unwrap();
+
+        assert_eq!(drained, Drained::default());
+        assert_eq!(only(pool).await.state, "delivered");
+        assert_eq!(server.received_requests().await.unwrap().len(), 1);
+        assert!(last.is_some());
+        assert_eq!(list_connections(pool).await.unwrap()[0].last_delivery, last);
+    }
+
     #[tokio::test]
-    async fn drain_due_drops_what_was_queued_while_switched_off_and_sends_once_back_on() {
+    async fn switching_off_and_on_never_sends_what_was_waiting_in_backoff() {
+        let pool = pool().await;
+        let server = ntfy_answering(ResponseTemplate::new(200)).await;
+        let (connection, last) = one_sent_and_one_in_backoff(&pool, &server).await;
+
+        set_connection_enabled(&pool, connection, false)
+            .await
+            .unwrap();
+        set_connection_enabled(&pool, connection, true)
+            .await
+            .unwrap();
+
+        assert_only_the_first_was_ever_sent(&pool, &server, last).await;
+    }
+
+    #[tokio::test]
+    async fn saving_off_and_on_never_sends_what_was_waiting_in_backoff() {
+        let pool = pool().await;
+        let server = ntfy_answering(ResponseTemplate::new(200)).await;
+        let (connection, last) = one_sent_and_one_in_backoff(&pool, &server).await;
+        let input = |enabled| omnibus_shared::NotificationConnectionInput {
+            enabled,
+            ..connection_input("Phone", ntfy_input(&server.uri()))
+        };
+
+        update_connection(&pool, connection, &input(false))
+            .await
+            .unwrap();
+        update_connection(&pool, connection, &input(true))
+            .await
+            .unwrap();
+
+        assert_only_the_first_was_ever_sent(&pool, &server, last).await;
+    }
+
+    #[tokio::test]
+    async fn drain_due_sends_what_is_queued_after_a_connection_is_switched_back_on() {
         let pool = pool().await;
         let server = ntfy_answering(ResponseTemplate::new(200)).await;
         let request = queued_for(&pool, &server).await;
@@ -195,18 +276,17 @@ mod drain_due {
         set_connection_enabled(&pool, connection, false)
             .await
             .unwrap();
+        let after_off = deliveries(&pool).await;
 
-        let off = drain_due(&pool, &client()).await.unwrap();
         set_connection_enabled(&pool, connection, true)
             .await
             .unwrap();
         queue_event(&pool, connection, request).await;
         let on = drain_due(&pool, &client()).await.unwrap();
 
-        assert_eq!(off.dropped, 1);
+        assert!(after_off.is_empty());
         assert_eq!(on.delivered, 1);
         assert_eq!(server.received_requests().await.unwrap().len(), 1);
-        assert_eq!(only(&pool).await.state, "delivered");
     }
 
     #[tokio::test]

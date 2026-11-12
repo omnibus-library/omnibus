@@ -916,7 +916,7 @@
           "Admin"
         ],
         "summary": "Replace a notification connection",
-        "description": "Replaces every field of a saved connection. A token or password left out or null keeps\nthe saved one, and an empty string clears it; switching `auth` drops the old mode's\nsecrets. A saved secret is kept only for the address it was saved for: when\n`server_url` changes, or for a password the `username`, it must be given again. To switch\na connection on or off, use `PATCH` on the same path, which changes nothing else. Needs an\nadmin account.",
+        "description": "Replaces every field of a saved connection. A token or password left out or null keeps\nthe saved one, and an empty string clears it; switching `auth` drops the old mode's\nsecrets. A saved secret is kept only for the address it was saved for: when\n`server_url` changes, or for a password the `username`, it must be given again. Saving\nit with `enabled` false deletes every notification still waiting to be sent on it, as the\nswitch does. To switch a connection on or off, use `PATCH` on the same path, which\nchanges nothing else. Needs an admin account.",
         "operationId": "update_notification_connection",
         "parameters": [
           {
@@ -998,7 +998,7 @@
           "Admin"
         ],
         "summary": "Turn a notification connection on or off",
-        "description": "Switches a connection on or off and changes nothing else, so it can't undo another\nadmin's edit of the name, settings or events. A connection that is off sends nothing, and\nwhat was queued for it is dropped unsent. Needs an admin account.",
+        "description": "Switches a connection on or off and changes nothing else, so it can't undo another\nadmin's edit of the name, settings or events. Switching off deletes every notification\nstill waiting to be sent on it, retries included, so switching back on sends only what\nhappens after. A connection that is off sends nothing. Needs an admin account.",
         "operationId": "set_notification_connection_enabled",
         "parameters": [
           {
