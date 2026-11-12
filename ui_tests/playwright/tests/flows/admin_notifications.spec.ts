@@ -170,8 +170,8 @@ test.describe("notifications section", () => {
     });
 
     await test.step("check the error shows in the form, which stays open", async () => {
-      await expect(modal.testStatus).toContainText(
-        "Test failed: could not reach the server",
+      await expect(modal.testStatus).toHaveText(
+        "Test failed: Couldn't connect to the ntfy server. Check the server URL and that the server is running.",
       );
       await expect(modal.dialog).toBeVisible();
       await expect(modal.topicField).toHaveValue(settings.topic);
@@ -197,8 +197,8 @@ test.describe("notifications section", () => {
     });
 
     await test.step("check its row says why the test failed", async () => {
-      await expect(section.rowStatus(connection.name)).toContainText(
-        "Test failed: could not reach the server",
+      await expect(section.rowStatus(connection.name)).toHaveText(
+        "Test failed: Couldn't connect to the ntfy server. Check the server URL and that the server is running.",
       );
       await expect(section.rowLastDelivery(connection.name)).toHaveText(
         "No deliveries yet",
@@ -260,11 +260,8 @@ test.describe("notifications section", () => {
     });
 
     await test.step("flip its switch off", async () => {
-      await expectMutation(
-        notifications.update(
-          savedWithoutSecrets(connection, { enabled: false }),
-        ),
-        () => section.flip(connection.name),
+      await expectMutation(notifications.setEnabled(false), () =>
+        section.flip(connection.name),
       );
       await expect(section.rowSwitch(connection.name)).not.toBeChecked();
     });

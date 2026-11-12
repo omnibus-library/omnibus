@@ -32,6 +32,14 @@ export const notifications = {
     expectedStatus: 200,
   }),
 
+  /** A switch flip: the PATCH carries `enabled` and nothing else. */
+  setEnabled: (enabled: boolean): ExpectMutationOptions => ({
+    method: "PATCH",
+    url: notificationUrls.connection,
+    expectedBody: { enabled },
+    expectedStatus: 200,
+  }),
+
   delete: (): ExpectMutationOptions => ({
     method: "DELETE",
     url: notificationUrls.connection,
