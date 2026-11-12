@@ -57,7 +57,7 @@ pub fn unreachable(provider: &str, why: Unreachable) -> String {
         ),
         Unreachable::Dns => format!("Couldn't find the {provider} server. Check the server URL."),
         Unreachable::Tls => format!(
-            "Couldn't make a secure connection to the {provider} server. Check its certificate."
+            "Couldn't make a secure connection to the {provider} server. Check its certificate, or use http:// if the server doesn't use HTTPS."
         ),
         Unreachable::Other => format!("Couldn't reach the {provider} server."),
     }

@@ -74,3 +74,11 @@ fn provider_error_refuses_an_echoed_secret_its_trimming_would_cut_short() {
         );
     }
 }
+
+#[test]
+fn unreachable_tells_a_failed_secure_connection_to_check_the_scheme_too() {
+    assert_eq!(
+        unreachable("ntfy", Unreachable::Tls),
+        "Couldn't make a secure connection to the ntfy server. Check its certificate, or use http:// if the server doesn't use HTTPS."
+    );
+}

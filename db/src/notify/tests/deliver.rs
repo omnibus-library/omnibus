@@ -284,7 +284,7 @@ mod unreachable {
 
         assert_eq!(
             message,
-            "Couldn't make a secure connection to the ntfy server. Check its certificate."
+            "Couldn't make a secure connection to the ntfy server. Check its certificate, or use http:// if the server doesn't use HTTPS."
         );
     }
 }
