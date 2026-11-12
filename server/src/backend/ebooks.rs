@@ -765,24 +765,35 @@ pub(super) async fn rewritten_or_source(
     }
 }
 
+/// What a non-admin reads in place of a folder error, which names the folder's path.
+const REDACTED_LIBRARY_ERROR: &str = "the folder couldn't be read";
+
 /// Count the files in the library folders
 ///
 /// How many ebook and audiobook files the configured library folders hold, by extension.
 /// It walks the folders on disk, so it counts files a scan hasn't indexed yet. A folder that
 /// is missing or unreadable reports `error` in its section instead of failing the request.
+/// Only an admin account gets the folder `path`. Anyone else gets `path` null and a generic
+/// `error`, because both can name a folder on the server.
 #[utoipa::path(
     get,
     path = "/api/library",
     tag = "Library",
     responses((status = 200, description = "The file counts.", body = LibraryContents)),
 )]
-pub(super) async fn get_library(_user: AuthUser, State(state): State<AppState>) -> Response {
+pub(super) async fn get_library(user: AuthUser, State(state): State<AppState>) -> Response {
     match db::get_settings(&state.pool).await {
         Ok(settings) => {
-            let contents = scanner::scan_libraries(
+            let mut contents = scanner::scan_libraries(
                 settings.ebook_library_path.as_deref(),
                 settings.audiobook_library_path.as_deref(),
             );
+            if !user.is_admin {
+                for section in [&mut contents.ebooks, &mut contents.audiobooks] {
+                    section.path = None;
+                    section.error = section.error.take().map(|_| REDACTED_LIBRARY_ERROR.into());
+                }
+            }
             Json(contents).into_response()
         }
         Err(error) => internal("read settings", error),

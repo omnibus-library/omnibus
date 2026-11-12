@@ -292,7 +292,7 @@ const NOT_SHARING: &str = "this reader isn't sharing their stats";
 #[tool_router(router = read_tools, vis = "pub(crate)")]
 impl OmnibusMcp {
     #[tool(
-        description = "Overview of what is on disk: file counts per format for the ebook and audiobook libraries, with each library's configured path. Cheap sanity check that the instance has content; use list_books for the actual catalog."
+        description = "Overview of what is on disk: file counts per format for the ebook and audiobook libraries, with each library's configured path (admin accounts only). Cheap sanity check that the instance has content; use list_books for the actual catalog."
     )]
     pub async fn library_overview(&self) -> Result<Json<LibraryContents>, ErrorData> {
         Ok(Json(self.client.get_json("/api/library", &[]).await?))

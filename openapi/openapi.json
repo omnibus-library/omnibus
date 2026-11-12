@@ -5529,7 +5529,7 @@
           "Library"
         ],
         "summary": "Count the files in the library folders",
-        "description": "How many ebook and audiobook files the configured library folders hold, by extension.\nIt walks the folders on disk, so it counts files a scan hasn't indexed yet. A folder that\nis missing or unreadable reports `error` in its section instead of failing the request.",
+        "description": "How many ebook and audiobook files the configured library folders hold, by extension.\nIt walks the folders on disk, so it counts files a scan hasn't indexed yet. A folder that\nis missing or unreadable reports `error` in its section instead of failing the request.\nOnly an admin account gets the folder `path`. Anyone else gets `path` null and a generic\n`error`, because both can name a folder on the server.",
         "operationId": "get_library",
         "responses": {
           "200": {
@@ -14367,14 +14367,14 @@
               "string",
               "null"
             ],
-            "description": "Why the folder couldn't be read. Null when it was read."
+            "description": "Why the folder couldn't be read. Null when it was read. A non-admin gets generic\ntext, because the real reason names the folder."
           },
           "path": {
             "type": [
               "string",
               "null"
             ],
-            "description": "The configured folder. Null when none is set."
+            "description": "The configured folder. Null when none is set, or for a non-admin."
           },
           "total_files": {
             "type": "integer",

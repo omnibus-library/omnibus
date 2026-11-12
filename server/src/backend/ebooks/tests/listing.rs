@@ -60,6 +60,59 @@ async fn api_get_library_reports_error_for_nonexistent_path() {
     assert!(contents.audiobooks.path.is_none());
 }
 
+/// The raw body and parsed contents of `GET /api/library` with a missing ebook folder.
+async fn library_with_missing_folder(admin: bool) -> (String, omnibus_shared::LibraryContents) {
+    let (_, _, pool) = fixture().await;
+    db::set_settings(
+        &pool,
+        &Settings {
+            ebook_library_path: Some("/does/not/exist/omnibus_test".to_string()),
+            audiobook_library_path: None,
+            scan_interval_hours: None,
+        },
+    )
+    .await
+    .expect("set should succeed");
+    let token = if admin {
+        admin_token(&pool).await
+    } else {
+        reader_token(&pool).await
+    };
+    let app = crate::backend::rest_router(AppState::new(pool));
+
+    let response = app
+        .oneshot(get_with_bearer("/api/library", &token))
+        .await
+        .expect("request should succeed");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = body_text(response).await;
+    let contents = serde_json::from_str(&body).unwrap();
+    (body, contents)
+}
+
+#[tokio::test]
+async fn api_get_library_hides_the_folder_path_from_a_reader() {
+    let (body, contents) = library_with_missing_folder(false).await;
+
+    assert!(contents.ebooks.path.is_none());
+    assert!(contents.ebooks.error.is_some());
+    assert!(!body.contains("/does/not/exist"), "{body}");
+}
+
+#[tokio::test]
+async fn api_get_library_shows_the_folder_path_to_an_admin() {
+    let (_, contents) = library_with_missing_folder(true).await;
+
+    assert_eq!(
+        contents.ebooks.path.as_deref(),
+        Some("/does/not/exist/omnibus_test")
+    );
+    assert!(contents
+        .ebooks
+        .error
+        .is_some_and(|e| e.contains("/does/not/exist/omnibus_test")));
+}
+
 #[tokio::test]
 async fn api_get_ebooks_returns_empty_when_path_not_configured() {
     let (app, _state, pool) = fixture().await;
