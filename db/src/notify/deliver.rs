@@ -5,7 +5,7 @@
 //! line or a response.
 
 use std::error::Error as _;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use reqwest::header::RETRY_AFTER;
 use reqwest::StatusCode;
@@ -114,17 +114,25 @@ fn innermost_cause(e: &reqwest::Error) -> Option<&(dyn std::error::Error + 'stat
     Some(cause)
 }
 
-/// The `Retry-After` seconds a provider sent, capped at [`MAX_RETRY_AFTER`]. The HTTP-date
-/// form isn't read, so it falls back to the outbox's own backoff.
+/// The wait a provider's `Retry-After` header asks for, as of now.
 fn retry_after(headers: &reqwest::header::HeaderMap) -> Option<Duration> {
-    let seconds: u64 = headers
-        .get(RETRY_AFTER)?
-        .to_str()
-        .ok()?
-        .trim()
-        .parse()
-        .ok()?;
-    Some(Duration::from_secs(seconds).min(MAX_RETRY_AFTER))
+    retry_after_at(headers.get(RETRY_AFTER)?.to_str().ok()?, SystemTime::now())
+}
+
+/// The wait a `Retry-After` value asks for as of `now`: delay-seconds, or a date in any of
+/// the three forms RFC 9110 has recipients accept (IMF-fixdate, RFC 850 and asctime). A
+/// date already past asks for none, a longer wait is capped at [`MAX_RETRY_AFTER`], and
+/// anything else is `None`.
+pub(super) fn retry_after_at(value: &str, now: SystemTime) -> Option<Duration> {
+    let value = value.trim();
+    let wait = match value.parse::<u64>() {
+        Ok(seconds) => Duration::from_secs(seconds),
+        Err(_) => httpdate::parse_http_date(value)
+            .ok()?
+            .duration_since(now)
+            .unwrap_or(Duration::ZERO),
+    };
+    Some(wait.min(MAX_RETRY_AFTER))
 }
 
 /// The start of a refusal's body, scrubbed of `secrets`, on one line and at most

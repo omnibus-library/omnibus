@@ -223,3 +223,76 @@ async fn deliver_drops_a_token_the_body_read_cut_through() {
 
     assert!(!message.contains("tk_ABC"), "{message}");
 }
+
+mod retry_after_at {
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+    use super::super::super::deliver::retry_after_at;
+
+    /// Sun, 06 Nov 1994 08:49:37 GMT, the date RFC 9110 writes in each form.
+    fn rfc_date() -> SystemTime {
+        UNIX_EPOCH + Duration::from_secs(784_111_777)
+    }
+
+    fn two_minutes_before() -> SystemTime {
+        rfc_date() - Duration::from_secs(120)
+    }
+
+    #[test]
+    fn retry_after_at_reads_delay_seconds() {
+        assert_eq!(
+            retry_after_at(" 120 ", SystemTime::now()),
+            Some(Duration::from_secs(120))
+        );
+    }
+
+    #[test]
+    fn retry_after_at_reads_each_http_date_form_as_the_time_until_it() {
+        for date in [
+            "Sun, 06 Nov 1994 08:49:37 GMT",
+            "Sunday, 06-Nov-94 08:49:37 GMT",
+            "Sun Nov  6 08:49:37 1994",
+        ] {
+            assert_eq!(
+                retry_after_at(date, two_minutes_before()),
+                Some(Duration::from_secs(120)),
+                "{date}"
+            );
+        }
+    }
+
+    #[test]
+    fn retry_after_at_asks_for_no_wait_when_the_date_has_passed() {
+        let later = rfc_date() + Duration::from_secs(60);
+
+        assert_eq!(
+            retry_after_at("Sun, 06 Nov 1994 08:49:37 GMT", later),
+            Some(Duration::ZERO)
+        );
+    }
+
+    #[test]
+    fn retry_after_at_caps_a_far_date_and_a_long_delay_at_an_hour() {
+        let ten_days_before = rfc_date() - Duration::from_secs(10 * 24 * 3600);
+
+        assert_eq!(
+            retry_after_at("Sun, 06 Nov 1994 08:49:37 GMT", ten_days_before),
+            Some(Duration::from_secs(3600))
+        );
+        assert_eq!(
+            retry_after_at("999999", ten_days_before),
+            Some(Duration::from_secs(3600))
+        );
+    }
+
+    #[test]
+    fn retry_after_at_reads_garbage_or_nothing_as_none() {
+        for value in ["soon", "", "-5", "1.5", "Sun, 06 Nov 1994"] {
+            assert_eq!(
+                retry_after_at(value, two_minutes_before()),
+                None,
+                "{value:?}"
+            );
+        }
+    }
+}
