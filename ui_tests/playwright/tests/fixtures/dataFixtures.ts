@@ -27,6 +27,14 @@ import {
 } from "../data/libraryFilters";
 import { isAudioPair, type MergedAudiobook } from "../data/merge";
 import type { MetadataProvider } from "../data/metadataKeys";
+import {
+  buildNtfyConnection,
+  buildPublicUrl,
+  type NotificationConnection,
+  type NotificationConnectionInput,
+  type NotificationConnections,
+  type PublicUrlStatus,
+} from "../data/notifications";
 import type { FiledCopy, PhysicalCopy } from "../data/physical";
 import {
   type BookProgress,
@@ -195,6 +203,15 @@ type DataFixtures = {
   linkedBookUuids: Set<string>;
   eventClock: EventClock;
   newestStoredClock: (bookUuid: string) => Promise<number>;
+  scratchPublicUrl: string;
+  createdNotificationIds: Set<number>;
+  ntfyConnection: (
+    overrides?: Partial<NotificationConnectionInput>,
+  ) => Promise<NotificationConnection>;
+  storedNotificationConnection: (
+    id: number,
+  ) => Promise<NotificationConnection | undefined>;
+  offeredNotificationEvents: string[];
 };
 
 /**
@@ -219,6 +236,60 @@ export const test = base.extend<DataFixtures>({
       const restored = await settingsRequests.postSettings(original);
       await expect(restored, "restore the library settings").toBeOK();
     });
+  },
+
+  // The public URL is server-wide: the lock keeps two saving tests from taking each
+  // other's URL for the original, which is put back after the test.
+  scratchPublicUrl: async ({ notificationsRequests }, use) => {
+    await withLock("public-url", async () => {
+      const before = await notificationsRequests.getPublicUrl();
+      await expect(before, "read the public URL").toBeOK();
+      const original: PublicUrlStatus = await before.json();
+      await use(buildPublicUrl());
+      const restored = await notificationsRequests.postPublicUrl(
+        original.source === "settings" ? original.url : null,
+      );
+      await expect(restored, "restore the public URL").toBeOK();
+    });
+  },
+
+  createdNotificationIds: async ({ notificationsRequests }, use) =>
+    cleanupSet(
+      use,
+      (id: number) => notificationsRequests.deleteConnection(id),
+      (id) => `delete notification connection ${id}`,
+    ),
+
+  ntfyConnection: async (
+    { notificationsRequests, createdNotificationIds },
+    use,
+  ) => {
+    await use(async (overrides) => {
+      const input = buildNtfyConnection(overrides);
+      const created = await notificationsRequests.postConnection(input);
+      await expect(created, `create connection ${input.name}`).toBeOK();
+      const connection: NotificationConnection = await created.json();
+      createdNotificationIds.add(connection.id);
+      return connection;
+    });
+  },
+
+  storedNotificationConnection: async ({ notificationsRequests }, use) => {
+    await use(async (id) => {
+      const listed = await notificationsRequests.getConnections();
+      await expect(listed, "list notification connections").toBeOK();
+      const { connections }: NotificationConnections = await listed.json();
+      return connections.find((c) => c.id === id);
+    });
+  },
+
+  // What a new connection is sent by default: the events the server offers, which
+  // depend on whether it runs with book requests.
+  offeredNotificationEvents: async ({ notificationsRequests }, use) => {
+    const listed = await notificationsRequests.getConnections();
+    await expect(listed, "list notification connections").toBeOK();
+    const { available_events }: NotificationConnections = await listed.json();
+    await use(available_events);
   },
 
   savedMetadataKeys: async ({ metadataKeysRequests }, use) =>

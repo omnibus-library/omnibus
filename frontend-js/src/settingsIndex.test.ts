@@ -46,6 +46,11 @@ describe("matchingSettings", () => {
     },
   );
 
+  it("finds the notification settings for an admin with requests off", () => {
+    expect(labels("ntfy", true)).toEqual(["Notification connections"]);
+    expect(labels("public url", true)).toEqual(["Public server URL"]);
+  });
+
   it("hides the request connections without request access", () => {
     expect(labels("prowlarr", true, false)).toEqual([]);
   });
@@ -92,6 +97,7 @@ describe("parseAdminSection", () => {
       "Library/cleanup",
       "Server/people",
       "Server/integrations",
+      "Server/notifications",
       "Server/health",
       "Server/logs",
     ]);

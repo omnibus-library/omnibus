@@ -10,6 +10,7 @@ import { JournalsRequests } from "../apiRequests/JournalsRequests";
 import { McpRequests } from "../apiRequests/McpRequests";
 import { MergeRequests } from "../apiRequests/MergeRequests";
 import { MetadataKeysRequests } from "../apiRequests/MetadataKeysRequests";
+import { NotificationsRequests } from "../apiRequests/NotificationsRequests";
 import { OverridesRequests } from "../apiRequests/OverridesRequests";
 import { PhysicalRequests } from "../apiRequests/PhysicalRequests";
 import { ProgressRequests } from "../apiRequests/ProgressRequests";
@@ -51,6 +52,7 @@ type RequestFixtures = {
   crossFormatRequests: CrossFormatRequests;
   statsRequests: StatsRequests;
   bookRequestsRequests: BookRequestsRequests;
+  notificationsRequests: NotificationsRequests;
 };
 
 /**
@@ -156,6 +158,10 @@ export const test = base.extend<RequestFixtures>({
 
   bookRequestsRequests: async ({ request }, use) => {
     await use(new BookRequestsRequests(request));
+  },
+
+  notificationsRequests: async ({ request }, use) => {
+    await use(new NotificationsRequests(request));
   },
 });
 

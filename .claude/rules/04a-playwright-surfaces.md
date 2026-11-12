@@ -166,7 +166,7 @@ spec's pattern) or assert that write.
 
 **Settings and Administration are one shell, two routes.** `/settings?section=`
 holds the five personal sections (`settings-nav-<slug>`), `/admin?section=`
-the eight server ones (`admin-nav-<slug>`); `SettingsPage` and `AdminPage`
+the nine server ones (`admin-nav-<slug>`); `SettingsPage` and `AdminPage`
 share the frame in `SettingsShellPage`. Pre-split slugs redirect, so a spec
 opens the new URL (`gotoLegacy` on `BasePage` takes an old one). Three things trip
 specs:

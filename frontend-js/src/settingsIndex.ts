@@ -29,6 +29,7 @@ export type AdminSlug =
   | "cleanup"
   | "people"
   | "integrations"
+  | "notifications"
   | "health"
   | "logs";
 
@@ -63,9 +64,10 @@ const METADATA = admin("metadata", "Metadata", "Library");
 const CLEANUP = admin("cleanup", "Cleanup", "Library");
 const PEOPLE = admin("people", "People", "Server");
 const INTEGRATIONS = admin("integrations", "Integrations", "Server");
+const NOTIFICATIONS = admin("notifications", "Notifications", "Server");
 const HEALTH = admin("health", "Health", "Server");
 const LOGS = admin("logs", "Logs", "Server");
-/** The eight admin sections, in sidebar order: Library's four, then Server's. */
+/** The nine admin sections, in sidebar order: Library's four, then Server's five. */
 export const ADMIN_SECTIONS: readonly AdminSection[] = [
   SOURCES,
   MAINTENANCE,
@@ -73,6 +75,7 @@ export const ADMIN_SECTIONS: readonly AdminSection[] = [
   CLEANUP,
   PEOPLE,
   INTEGRATIONS,
+  NOTIFICATIONS,
   HEALTH,
   LOGS,
 ];
@@ -168,6 +171,16 @@ const SETTINGS_INDEX: readonly SettingsEntry[] = [
     needsRequestAccess: true,
   },
   entry("Hosted MCP endpoint", ["mcp"], INTEGRATIONS),
+  entry(
+    "Public server URL",
+    ["public url", "address", "domain", "links"],
+    NOTIFICATIONS,
+  ),
+  entry(
+    "Notification connections",
+    ["ntfy", "push", "alerts", "notify"],
+    NOTIFICATIONS,
+  ),
   entry(
     "Server health",
     ["health", "status", "errors", "worker queue", "storage"],

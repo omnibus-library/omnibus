@@ -28,6 +28,13 @@ import {
   type LogRecord,
   McpStatus,
   MetadataSource,
+  type NotificationConnection,
+  NotificationConnectionEnabled,
+  NotificationConnectionInput,
+  type NotificationEvent,
+  NotificationTest,
+  type PublicUrlStatus,
+  PublicUrlUpdate,
   RegistrationStatus,
   type RequestsSettingsStatus,
   RequestsSettingsUpdate,
@@ -691,6 +698,243 @@ export function mcpHandlers(
   ];
 }
 
+/** What `GET /api/settings/public-url` reports for a URL saved through the API. */
+export function aWirePublicUrl(
+  overrides: Partial<PublicUrlStatus> = {},
+): PublicUrlStatus {
+  return { url: "https://books.example.com", source: "settings", ...overrides };
+}
+
+/**
+ * `GET` and `POST /api/settings/public-url`: a save sets the URL without its trailing
+ * slash, a blank or null one clears it back to `env` (when given), and anything but an
+ * http(s) address answers 422 as the server does. The handler adds each posted URL to `saved`.
+ */
+export function publicUrlHandlers(
+  initial: PublicUrlStatus,
+  {
+    saved = [],
+    env = null,
+  }: { saved?: (string | null)[]; env?: string | null } = {},
+) {
+  let current = initial;
+  return [
+    http.get("/api/settings/public-url", () => HttpResponse.json(current)),
+    http.post("/api/settings/public-url", async ({ request }) => {
+      const url = PublicUrlUpdate.parse(await request.json()).url ?? null;
+      saved.push(url);
+      if (url === null || url.trim() === "") {
+        current = env
+          ? { url: env, source: "env" }
+          : { url: null, source: "none" };
+      } else if (!/^https?:\/\//.test(url.trim())) {
+        return new HttpResponse(
+          "public url must start with http:// or https://",
+          { status: 422 },
+        );
+      } else {
+        current = { url: url.trim().replace(/\/+$/, ""), source: "settings" };
+      }
+      return HttpResponse.json(current);
+    }),
+  ];
+}
+
+/** An ntfy connection saved with a token, as `GET /api/admin/notifications/connections` lists it. */
+export function aWireNotificationConnection(
+  overrides: Partial<NotificationConnection> = {},
+  settings: Partial<NotificationConnection["settings"]> = {},
+): NotificationConnection {
+  return {
+    id: 1,
+    name: "Phone",
+    enabled: true,
+    events: ["request_needs_chooser"],
+    last_delivery: null,
+    ...overrides,
+    settings: {
+      kind: "ntfy",
+      server_url: "https://ntfy.sh",
+      topic: "omnibus-requests",
+      auth: "token",
+      username: null,
+      token_set: true,
+      password_set: false,
+      priority: 3,
+      tags: [],
+      include_details: true,
+      ...settings,
+    },
+  };
+}
+
+/** What `notificationHandlers` records of the writes it answers, each body exactly as sent. */
+export type NotificationWrites = {
+  created: unknown[];
+  updated: { id: number; body: unknown }[];
+  /** Each switch flip, as the method, path and body it arrived with. */
+  switched: { method: string; path: string; body: unknown }[];
+  deleted: number[];
+  tested: unknown[];
+};
+
+/**
+ * Why the server would refuse to lend `was`'s saved secret to `input`, which leaves it out:
+ * it goes only to the address it was saved for, and a password only to its username too.
+ */
+function lentSecretRefusal(
+  input: NotificationConnectionInput["settings"],
+  was: NotificationConnection["settings"],
+): string | null {
+  const urlChanged = input.server_url.trim() !== was.server_url;
+  if (input.auth === "token" && !input.token && was.token_set && urlChanged) {
+    return "enter the token again: the server URL changed";
+  }
+  if (input.auth === "basic" && !input.password && was.password_set) {
+    if (urlChanged) return "enter the password again: the server URL changed";
+    if ((input.username ?? "").trim() !== (was.username ?? "")) {
+      return "enter the password again: the username changed";
+    }
+  }
+  return null;
+}
+
+/** A saved connection's settings after `input` replaces them: a secret left out is kept while the mode stays. */
+function storedSettings(
+  input: NotificationConnectionInput["settings"],
+  was: NotificationConnection["settings"] | null,
+): NotificationConnection["settings"] {
+  const kept = (mode: "token" | "basic", set: boolean | undefined) =>
+    was?.auth === mode && set === true;
+  return {
+    kind: "ntfy",
+    // Kept as typed, trailing slash and all, as the server keeps it.
+    server_url: input.server_url.trim(),
+    topic: input.topic.trim(),
+    auth: input.auth,
+    username: input.auth === "basic" ? (input.username ?? null) : null,
+    token_set:
+      input.auth === "token" &&
+      (input.token ? true : kept("token", was?.token_set)),
+    password_set:
+      input.auth === "basic" &&
+      (input.password ? true : kept("basic", was?.password_set)),
+    priority: input.priority ?? 3,
+    tags: input.tags ?? [],
+    include_details: input.include_details ?? true,
+  };
+}
+
+/**
+ * The `/api/admin/notifications` routes over a list of connections: a create adds one, a
+ * save replaces one (404 once it is gone), a PATCH turns one on or off and changes nothing
+ * else (422 for any body but `{enabled}`), a delete removes one and a test answers 204.
+ * A save or test that leaves a secret out where the server wouldn't lend it answers 422.
+ * Secrets are never sent back, only whether one is set. The handler records every write.
+ */
+export function notificationHandlers(
+  initial: NotificationConnection[],
+  {
+    available = ["request_needs_chooser"],
+    writes = {},
+  }: {
+    available?: NotificationEvent[];
+    writes?: Partial<NotificationWrites>;
+  } = {},
+) {
+  let connections = initial;
+  const gone = () =>
+    new HttpResponse("notification connection not found", { status: 404 });
+  const idOf = (params: Record<string, unknown>) => Number(params.id);
+  return [
+    http.get("/api/admin/notifications/connections", () =>
+      HttpResponse.json({
+        connections: [...connections].sort((a, b) =>
+          a.name.localeCompare(b.name),
+        ),
+        available_events: available,
+      }),
+    ),
+    http.post("/api/admin/notifications/connections", async ({ request }) => {
+      const body = await request.json();
+      writes.created?.push(body);
+      const input = NotificationConnectionInput.parse(body);
+      const created: NotificationConnection = {
+        id: Math.max(0, ...connections.map((c) => c.id)) + 1,
+        name: input.name.trim(),
+        enabled: input.enabled ?? true,
+        events: input.events,
+        last_delivery: null,
+        settings: storedSettings(input.settings, null),
+      };
+      connections = [...connections, created];
+      return HttpResponse.json(created, { status: 201 });
+    }),
+    http.put(
+      "/api/admin/notifications/connections/:id",
+      async ({ request, params }) => {
+        const id = idOf(params);
+        const body = await request.json();
+        writes.updated?.push({ id, body });
+        const was = connections.find((c) => c.id === id);
+        if (!was) return gone();
+        const input = NotificationConnectionInput.parse(body);
+        const refusal = lentSecretRefusal(input.settings, was.settings);
+        if (refusal) return new HttpResponse(refusal, { status: 422 });
+        const saved: NotificationConnection = {
+          ...was,
+          name: input.name.trim(),
+          enabled: input.enabled ?? true,
+          events: input.events,
+          settings: storedSettings(input.settings, was.settings),
+        };
+        connections = connections.map((c) => (c.id === id ? saved : c));
+        return HttpResponse.json(saved);
+      },
+    ),
+    http.patch(
+      "/api/admin/notifications/connections/:id",
+      async ({ request, params }) => {
+        const id = idOf(params);
+        const body = await request.json();
+        writes.switched?.push({
+          method: request.method,
+          path: new URL(request.url).pathname,
+          body,
+        });
+        // Strict, as the server denies any key but `enabled`.
+        const parsed = NotificationConnectionEnabled.strict().safeParse(body);
+        if (!parsed.success) {
+          return new HttpResponse(parsed.error.message, { status: 422 });
+        }
+        const { enabled } = parsed.data;
+        const was = connections.find((c) => c.id === id);
+        if (!was) return gone();
+        const switched = { ...was, enabled };
+        connections = connections.map((c) => (c.id === id ? switched : c));
+        return HttpResponse.json(switched);
+      },
+    ),
+    http.delete("/api/admin/notifications/connections/:id", ({ params }) => {
+      const id = idOf(params);
+      writes.deleted?.push(id);
+      if (!connections.some((c) => c.id === id)) return gone();
+      connections = connections.filter((c) => c.id !== id);
+      return new HttpResponse(null, { status: 204 });
+    }),
+    http.post("/api/admin/notifications/test", async ({ request }) => {
+      const body = await request.json();
+      writes.tested?.push(body);
+      const test = NotificationTest.parse(body);
+      const was = connections.find((c) => c.id === test.id);
+      if (test.id != null && !was) return gone();
+      const refusal = was && lentSecretRefusal(test.settings, was.settings);
+      if (refusal) return new HttpResponse(refusal, { status: 422 });
+      return new HttpResponse(null, { status: 204 });
+    }),
+  ];
+}
+
 /** A healthy server: both folders set, the search index in step, an idle worker and a quiet error ring. */
 export function aWireAdminHealth(
   overrides: Partial<AdminHealthReport> = {},
@@ -782,6 +1026,8 @@ export function adminHandlers() {
     ...secretKeyHandlers("/api/google-books-key", NO_KEY),
     ...ebookConvertHandlers(aWireEbookConvert()),
     ...mcpHandlers(false),
+    ...publicUrlHandlers(aWirePublicUrl()),
+    ...notificationHandlers([aWireNotificationConnection()]),
     getGetAdminHealthMockHandler200(() => aWireAdminHealth()),
     logsHandler(() => aWireLogPage()),
   ];

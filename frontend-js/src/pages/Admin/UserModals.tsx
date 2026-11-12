@@ -159,17 +159,20 @@ function ModalError({ error }: { error: string | null }) {
   );
 }
 
-// While `busy` (a save is out, or the form holds edits a stray click would discard) the scrim and Escape do nothing. The cross always works.
-function ModalShell({
+/** An admin form's dialog over a scrim. While `busy` (a save is out, or the form holds edits a stray click would discard) the scrim and Escape do nothing; the cross works unless `locked`. */
+export function ModalShell({
   title,
   testId,
   busy,
+  locked = false,
   onClose,
   children,
 }: {
   title: string;
   testId: string;
   busy: boolean;
+  /** A write is out that closing would orphan, so the cross waits too. */
+  locked?: boolean;
   onClose: () => void;
   children: ReactNode;
 }) {
@@ -189,6 +192,7 @@ function ModalShell({
           type="button"
           className="users-modal-close"
           aria-label="Close"
+          disabled={locked}
           onClick={onClose}
         >
           <XGlyph />
