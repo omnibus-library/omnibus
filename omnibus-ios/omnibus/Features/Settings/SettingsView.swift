@@ -1,5 +1,6 @@
 //  SettingsView.swift
-//  Admin-only server settings: library paths and index maintenance.
+//  Admin-only server settings: library paths, the way in to notifications,
+//  and index maintenance.
 
 import SwiftUI
 
@@ -21,6 +22,7 @@ struct SettingsView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 28) {
                         paths
+                        notifications
                         maintenance
                         if let status { statusLine(status) }
                     }
@@ -35,7 +37,8 @@ struct SettingsView: View {
         .background(ScreenBackground())
         .navigationTitle("Server settings")
         .navigationBarTitleDisplayMode(.inline)
-        .task { await load() }
+        // Once: coming back from Notifications must not overwrite paths being typed.
+        .task { if isLoading { await load() } }
     }
 
     /// A filesystem path is long, monospaced, and edited whole — a trailing
@@ -71,6 +74,25 @@ struct SettingsView: View {
             Text("Saving repoints the library and reindexes in the background.")
                 .font(.ui(12))
                 .foregroundStyle(palette.ink3Color)
+        }
+    }
+
+    private var notifications: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            SectionLabel("Notifications")
+
+            VStack(spacing: 0) {
+                NavigationLink(value: Destination.notifications) {
+                    rowLabel(
+                        "Connections and public URL",
+                        detail: "Where the server sends alerts through ntfy, and the address their links open.",
+                        icon: "bell", isFirst: true, chevron: true
+                    )
+                }
+                .buttonStyle(PressableStyle())
+                .accessibilityIdentifier("settings-notifications")
+                RecordRule()
+            }
         }
     }
 
@@ -112,32 +134,45 @@ struct SettingsView: View {
             Haptics.tap()
             Task { await action() }
         } label: {
-            VStack(spacing: 0) {
-                if !isFirst { Hairline() }
-
-                HStack(spacing: Spacing.md) {
-                    Image(systemName: icon)
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(palette.accentColor)
-                        .frame(width: 24)
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(title)
-                            .font(.ui(15))
-                            .foregroundStyle(palette.ink0Color)
-                        Text(detail)
-                            .font(.ui(11.5))
-                            .foregroundStyle(palette.ink3Color)
-                            .multilineTextAlignment(.leading)
-                    }
-
-                    Spacer(minLength: 0)
-                }
-                .padding(.vertical, 12)
-                .contentShape(Rectangle())
-            }
+            rowLabel(title, detail: detail, icon: icon, isFirst: isFirst)
         }
         .buttonStyle(PressableStyle())
+    }
+
+    private func rowLabel(
+        _ title: String, detail: String, icon: String, isFirst: Bool, chevron: Bool = false
+    ) -> some View {
+        VStack(spacing: 0) {
+            if !isFirst { Hairline() }
+
+            HStack(spacing: Spacing.md) {
+                Image(systemName: icon)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(palette.accentColor)
+                    .frame(width: 24)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.ui(15))
+                        .foregroundStyle(palette.ink0Color)
+                    Text(detail)
+                        .font(.ui(11.5))
+                        .foregroundStyle(palette.ink3Color)
+                        .multilineTextAlignment(.leading)
+                }
+
+                Spacer(minLength: 0)
+
+                if chevron {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(palette.ink3Color.opacity(0.7))
+                        .accessibilityHidden(true)
+                }
+            }
+            .padding(.vertical, 12)
+            .contentShape(Rectangle())
+        }
     }
 
     private func statusLine(_ status: String) -> some View {

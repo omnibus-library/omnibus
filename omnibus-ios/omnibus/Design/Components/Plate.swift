@@ -168,6 +168,12 @@ struct PlateField: View {
     /// (the caption above it is a sibling), so without one a test can only
     /// reach it positionally.
     var identifier: String?
+    /// Shown in the empty field, such as an example value.
+    var placeholder = ""
+    /// Overrides the default (words, or sentences when multiline) — `.never` for an address.
+    var capitalization: TextInputAutocapitalization?
+    /// Hides what is typed, for a secret.
+    var isSecure = false
 
     @Environment(\.palette) private var palette
     @FocusState private var focused: Bool
@@ -207,10 +213,10 @@ struct PlateField: View {
                     }
                 }
 
-                TextField("", text: $text, axis: multiline ? .vertical : .horizontal)
+                input
                     .font(multiline ? .display(18) : .ui(15))
                     .foregroundStyle(palette.ink0Color)
-                    .textInputAutocapitalization(multiline ? .sentences : .words)
+                    .textInputAutocapitalization(capitalization ?? (multiline ? .sentences : .words))
                     .autocorrectionDisabled(!multiline)
                     .keyboardType(keyboard)
                     // Grows with what's in it. A four-line floor left an empty
@@ -251,6 +257,16 @@ struct PlateField: View {
                 return
             }
             if focused { open = true }
+        }
+    }
+
+    /// A secret only swaps the control; everything around it is the same field.
+    @ViewBuilder
+    private var input: some View {
+        if isSecure {
+            SecureField(placeholder, text: $text)
+        } else {
+            TextField(placeholder, text: $text, axis: multiline ? .vertical : .horizontal)
         }
     }
 }
