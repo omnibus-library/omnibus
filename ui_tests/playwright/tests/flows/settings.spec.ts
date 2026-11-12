@@ -23,6 +23,7 @@ const ADMIN_SECTIONS: AdminSection[] = [
   "cleanup",
   "people",
   "integrations",
+  "notifications",
   "health",
   "logs",
 ];
@@ -108,6 +109,14 @@ test.describe("administration page", () => {
       await expect(integrations.smtp.card).toBeVisible();
       await expect(integrations.keyCard("hardcover").root).toBeVisible();
       await expect(integrations.keyCard("google-books").root).toBeVisible();
+    });
+
+    await test.step("open notifications", async () => {
+      await adminPage.openSection("notifications");
+      await adminPage.assertDisplayedFor("notifications");
+      const { notifications } = adminPage;
+      await expect(notifications.publicUrlCard).toBeVisible();
+      await expect(notifications.connectionsCard).toBeVisible();
     });
 
     await test.step("open people", async () => {

@@ -6,6 +6,7 @@ import { LibrarySectionComponent } from "../components/LibrarySectionComponent";
 import { LogsSectionComponent } from "../components/LogsSectionComponent";
 import { MaintenanceSectionComponent } from "../components/MaintenanceSectionComponent";
 import { MetadataSectionComponent } from "../components/MetadataSectionComponent";
+import { NotificationsSectionComponent } from "../components/NotificationsSectionComponent";
 import { UsersSectionComponent } from "../components/UsersSectionComponent";
 import { SettingsShellPage } from "./SettingsShellPage";
 
@@ -17,6 +18,7 @@ export type AdminSection =
   | "cleanup"
   | "people"
   | "integrations"
+  | "notifications"
   | "health"
   | "logs";
 
@@ -28,6 +30,7 @@ export class AdminPage extends SettingsShellPage<AdminSection> {
   readonly cleanup: CleanupSectionComponent;
   readonly users: UsersSectionComponent;
   readonly integrations: IntegrationsSectionComponent;
+  readonly notifications: NotificationsSectionComponent;
   readonly health: HealthSectionComponent;
   readonly logs: LogsSectionComponent;
 
@@ -47,6 +50,7 @@ export class AdminPage extends SettingsShellPage<AdminSection> {
     this.cleanup = new CleanupSectionComponent(page);
     this.users = new UsersSectionComponent(page);
     this.integrations = new IntegrationsSectionComponent(page);
+    this.notifications = new NotificationsSectionComponent(page);
     this.health = new HealthSectionComponent(page);
     this.logs = new LogsSectionComponent(page);
     this.forbiddenNotice = page.getByTestId("admin-forbidden");
