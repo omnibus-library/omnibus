@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { deferred } from "./testing/handlers";
-import { turnMode, turnPage } from "./viewTransition";
+import { turnMode, turnPage, turnPageThrough } from "./viewTransition";
 
 // jsdom has neither matchMedia nor View Transitions, so a test says what the browser offers.
 const stubReducedMotion = (reduce: boolean) =>
@@ -12,6 +12,7 @@ const stubReducedMotion = (reduce: boolean) =>
 type StartViewTransition = (update: () => void) => {
   ready: Promise<void>;
   updateCallbackDone: Promise<void>;
+  finished: Promise<void>;
 };
 
 const stubViewTransitions = (start: StartViewTransition) =>
@@ -34,6 +35,7 @@ describe("turnMode", () => {
     stubViewTransitions(() => ({
       ready: Promise.resolve(),
       updateCallbackDone: Promise.resolve(),
+      finished: Promise.resolve(),
     }));
 
     expect(turnMode()).toBe("view-transition");
@@ -44,6 +46,7 @@ describe("turnMode", () => {
     stubViewTransitions(() => ({
       ready: Promise.resolve(),
       updateCallbackDone: Promise.resolve(),
+      finished: Promise.resolve(),
     }));
 
     expect(turnMode()).toBe("instant");
@@ -83,6 +86,7 @@ describe("turnPage", () => {
       return {
         ready: Promise.resolve(),
         updateCallbackDone: Promise.resolve(),
+        finished: Promise.resolve(),
       };
     });
 
@@ -97,6 +101,7 @@ describe("turnPage", () => {
     stubViewTransitions(() => ({
       ready: Promise.resolve(),
       updateCallbackDone: callbackDone.promise,
+      finished: Promise.resolve(),
     }));
     let resolved = false;
 
@@ -109,5 +114,53 @@ describe("turnPage", () => {
     callbackDone.release();
     await done;
     expect(resolved).toBe(true);
+  });
+});
+
+describe("turnPageThrough", () => {
+  it("settles finished only once the turn is drawn, after updated", async () => {
+    stubReducedMotion(false);
+    const drawn = deferred();
+    stubViewTransitions((update) => {
+      update();
+      return {
+        ready: Promise.resolve(),
+        updateCallbackDone: Promise.resolve(),
+        finished: drawn.promise,
+      };
+    });
+    let finished = false;
+
+    const turn = turnPageThrough(() => {});
+    turn.finished.then(() => {
+      finished = true;
+    });
+    await turn.updated;
+    await Promise.resolve();
+    expect(finished).toBe(false);
+
+    drawn.release();
+    await turn.finished;
+    expect(finished).toBe(true);
+  });
+
+  it("settles finished for a turn the next one skipped", async () => {
+    stubReducedMotion(false);
+    stubViewTransitions(() => ({
+      ready: Promise.reject(new Error("skipped")),
+      updateCallbackDone: Promise.resolve(),
+      finished: Promise.reject(new Error("skipped")),
+    }));
+
+    await expect(turnPageThrough(() => {}).finished).resolves.toBeUndefined();
+  });
+
+  it("is finished at once without view transitions", async () => {
+    stubReducedMotion(true);
+    const update = vi.fn();
+
+    await turnPageThrough(update).finished;
+
+    expect(update).toHaveBeenCalledOnce();
   });
 });

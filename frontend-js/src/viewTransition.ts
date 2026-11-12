@@ -11,15 +11,27 @@ export function turnMode(): TurnMode {
     : "css";
 }
 
-/** Runs `update` (a React state change) inside a View Transition when there is one; resolves once the DOM shows it. */
-export function turnPage(update: () => void): Promise<void> {
+/**
+ * Runs `update` (a React state change) inside a View Transition when there is one. `updated` resolves
+ * once the DOM shows it, `finished` once the turn has been drawn to its end.
+ */
+export function turnPageThrough(update: () => void): {
+  updated: Promise<void>;
+  finished: Promise<void>;
+} {
   if (turnMode() !== "view-transition") {
     update();
-    return Promise.resolve();
+    return { updated: Promise.resolve(), finished: Promise.resolve() };
   }
   // React must commit inside the callback, or the transition snapshots the old page twice.
   const transition = document.startViewTransition(() => flushSync(update));
   // A turn skipped by the next one rejects `ready`; the page is already where it was going.
   transition.ready.catch(() => {});
-  return transition.updateCallbackDone;
+  // `finished` settles for a skipped turn too, so a caller waiting on it is never left hanging.
+  const finished = transition.finished.catch(() => {});
+  return { updated: transition.updateCallbackDone, finished };
 }
+
+/** Runs `update` inside a View Transition when there is one; resolves once the DOM shows it. */
+export const turnPage = (update: () => void): Promise<void> =>
+  turnPageThrough(update).updated;

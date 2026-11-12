@@ -77,10 +77,12 @@ function Page({ book }: { book: Detail }) {
     });
   };
   // Focus lands on the tab, so the next Tab goes into the reviews rather than back to the hero.
+  // The scroll waits for the turn: one that ran under it would paint the snapshots over the top bar.
   const openReviews = async () => {
-    await selectTab("reviews");
-    document.getElementById(tabId("reviews"))?.focus({ preventScroll: true });
-    document.getElementById(panelId("reviews"))?.scrollIntoView({
+    await selectTab("reviews", true);
+    const tab = document.getElementById(tabId("reviews"));
+    tab?.focus({ preventScroll: true });
+    tab?.closest(".bp-tabs")?.scrollIntoView({
       behavior: prefersReducedMotion() ? "auto" : "smooth",
       block: "start",
     });

@@ -1058,6 +1058,8 @@ button.bp-byline-series {
 /* ---------- Tabs, with the ribbon bookmark as the indicator ---------- */
 /* Above what the panels position, so nothing covers the ribbon; under the sticky top bar's 5. */
 .bp-tabs {
+  /* A scroll to the strip stops below the sticky top bar, not under it. */
+  scroll-margin-top: calc(var(--topbar-h) + 8px);
   position: relative;
   z-index: 3;
   border-bottom: 1px solid var(--line);
