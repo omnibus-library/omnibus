@@ -17,6 +17,7 @@ use sqlx::SqlitePool;
 
 use crate::test_support::{
     control, ntfy_input, ntfy_record, ntfy_settings, send_sample, spawn, Running, PUBLIC_URL,
+    SAYS_SERVER_ERROR, SAYS_SIGN_IN_REFUSED, SAYS_TOPIC_FORBIDDEN,
 };
 
 use super::*;
@@ -117,10 +118,12 @@ async fn publish_refuses_a_wrong_sign_in_with_a_401_the_server_does_not_retry() 
             .await
             .unwrap_err();
 
-        assert!(
-            matches!(&err, DeliverError::Permanent { message }
-                if message.contains("401") && message.contains("40101")),
-            "{scheme}: {err:?}"
+        assert_eq!(
+            err,
+            DeliverError::Permanent {
+                message: SAYS_SIGN_IN_REFUSED.to_string()
+            },
+            "{scheme}"
         );
         let got = first(&mock).await;
         assert_eq!(got["status"], 401, "{scheme}");
@@ -142,10 +145,11 @@ async fn publish_refuses_a_publish_with_no_sign_in_with_a_403_the_server_does_no
         .await
         .unwrap_err();
 
-    assert!(
-        matches!(&err, DeliverError::Permanent { message }
-            if message.contains("403") && message.contains("40301")),
-        "{err:?}"
+    assert_eq!(
+        err,
+        DeliverError::Permanent {
+            message: SAYS_TOPIC_FORBIDDEN.to_string()
+        }
     );
     let got = first(&mock).await;
     assert_eq!(
@@ -357,7 +361,7 @@ async fn drain_due_keeps_a_notification_queued_with_its_error_after_a_forced_500
     let rows = outbox(&pool).await;
     let (state, attempts, error) = &rows[0];
     assert_eq!((state.as_str(), *attempts), ("queued", 1));
-    assert!(error.as_deref().unwrap().contains("500"));
+    assert_eq!(error.as_deref(), Some(SAYS_SERVER_ERROR));
     assert_eq!(first(&mock).await["status"], 500);
     assert!(last_delivery(&pool, id).await.is_none());
 }
@@ -378,7 +382,7 @@ async fn drain_due_fails_a_notification_the_fake_refuses_with_a_401_and_shows_wh
     assert_eq!(drained.failed, 1);
     let last = last_delivery(&pool, id).await.unwrap();
     assert!(!last.ok);
-    assert!(last.error.unwrap().contains("401 Unauthorized"));
+    assert_eq!(last.error.as_deref(), Some(SAYS_SIGN_IN_REFUSED));
 }
 
 #[tokio::test]
@@ -392,11 +396,9 @@ async fn drain_due_drops_a_pending_retry_unsent_once_the_connection_is_turned_of
     .await;
     let (pool, id) = queued(&mock).await;
     drain(&pool).await;
-    let off = NotificationConnectionInput {
-        enabled: false,
-        ..connection(&mock)
-    };
-    notify::update_connection(&pool, id, &off).await.unwrap();
+    notify::set_connection_enabled(&pool, id, false)
+        .await
+        .unwrap();
     // The retry is due in 30 seconds; bring it forward.
     sqlx::query("UPDATE notification_deliveries SET next_attempt_at = 0")
         .execute(&pool)

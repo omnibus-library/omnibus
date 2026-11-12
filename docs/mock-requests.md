@@ -176,20 +176,33 @@ notification and sends it within seconds; it shows in `/_mock/ntfy` with the boo
 `/requests?book=<uuid>`. An admin's own requests, or those of a reader who may pick,
 send nothing.
 
-What the server does with a forced failure:
+What the server does with a forced failure, and what an admin sees. The server never
+shows the mock's status line or JSON body: the connection's last delivery and a test
+send's failure carry a plain sentence, and the raw status and a scrubbed piece of the
+body go only to the server's log, as a `WARN` line.
 
-- **500 or 429**: it tries again, 30 seconds after the first try and doubling up to
-  an hour, or after the `Retry-After` when that is longer: about five hours in all,
-  as the twelfth failed try gives up. Each try shows in `/_mock/ntfy` with its status.
-- **401 (or 403)**: it gives up at once. The connection's last delivery shows it
-  failed, with the mock's answer as the reason: under Administration › Notifications
-  on the web, You › Server settings › Notifications on iOS, and in
-  `GET /api/admin/notifications/connections`.
+| Forced | The server | Sentence shown |
+|---|---|---|
+| `server_error` (500) | tries again | `The ntfy server had a problem and couldn't take the message (HTTP 500).` |
+| `rate_limited` (429) | tries again | `ntfy is limiting how often Omnibus can post.` |
+| `unauthorized` (401), or a wrong token | gives up at once | `ntfy refused the sign-in. Check the access token, or the username and password.` |
+| no sign-in (the fake's own 403) | gives up at once | `ntfy didn't let this sign-in post to the topic. Check that the token or account can write to it.` |
+
+- **Retries** come 30 seconds after the first try, doubling up to an hour, or after
+  the `Retry-After` when that is longer: about five hours in all, as the twelfth
+  failed try gives up. The fake sends `Retry-After` as seconds; the server also reads
+  a date. Each try shows in `/_mock/ntfy` with its status, and the queued row keeps
+  the sentence as its last error.
+- **Giving up** fails the notification, and the connection's last delivery shows the
+  sentence: under Administration › Notifications on the web, You › Server settings ›
+  Notifications on iOS, and in `GET /api/admin/notifications/connections`.
 - A notification still waiting for a retry is dropped unsent, and leaves no failed
   last delivery, when its connection is turned off or its request is picked,
-  cancelled or restarted meanwhile.
-- A test send, wiring's own included, reports the mock's answer at once and never
-  changes the last delivery.
+  cancelled or restarted meanwhile. Turn the `Mock ntfy` connection off with its
+  switch, or with `PATCH /api/admin/notifications/connections/{id}` and
+  `{"enabled": false}`, which changes nothing else.
+- A test send, wiring's own included, answers with the same sentence at once (the web
+  shows it after `Test failed: `) and never changes the last delivery.
 
 ## Caveats
 

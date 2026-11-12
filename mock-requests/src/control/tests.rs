@@ -11,6 +11,7 @@ use serde_json::{json, Value};
 
 use crate::test_support::{
     add_epub, control, control_reply, ntfy_record, ntfy_settings, send_sample, spawn, Running,
+    SAYS_RATE_LIMITED, SAYS_SERVER_ERROR, SAYS_SIGN_IN_REFUSED,
 };
 use crate::{CLIENT_PASSWORD, CLIENT_USERNAME, NTFY_TOKEN, PROWLARR_API_KEY};
 
@@ -151,9 +152,12 @@ async fn ntfy_server_error_makes_a_publish_one_the_server_retries() {
 
     let err = publish(&mock).await.unwrap_err();
 
-    assert!(
-        matches!(err, DeliverError::Retry { after: None, .. }),
-        "{err:?}"
+    assert_eq!(
+        err,
+        DeliverError::Retry {
+            after: None,
+            message: SAYS_SERVER_ERROR.to_string()
+        }
     );
     assert_eq!(statuses(&mock).await, [500]);
 }
@@ -170,9 +174,12 @@ async fn ntfy_rate_limited_makes_a_publish_one_the_server_retries_after_the_seco
 
     let err = publish(&mock).await.unwrap_err();
 
-    assert!(
-        matches!(err, DeliverError::Retry { after: Some(after), .. } if after == Duration::from_secs(42)),
-        "{err:?}"
+    assert_eq!(
+        err,
+        DeliverError::Retry {
+            after: Some(Duration::from_secs(42)),
+            message: SAYS_RATE_LIMITED.to_string()
+        }
     );
     assert_eq!(statuses(&mock).await, [429]);
 }
@@ -184,7 +191,12 @@ async fn ntfy_unauthorized_refuses_even_the_right_token_and_the_server_gives_up(
 
     let err = publish(&mock).await.unwrap_err();
 
-    assert!(matches!(err, DeliverError::Permanent { .. }), "{err:?}");
+    assert_eq!(
+        err,
+        DeliverError::Permanent {
+            message: SAYS_SIGN_IN_REFUSED.to_string()
+        }
+    );
     let got = ntfy_record(&mock).await["messages"][0].clone();
     assert_eq!(
         (&got["status"], &got["auth"]["matched"]),

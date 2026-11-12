@@ -208,11 +208,11 @@ async fn wire_reports_the_ntfy_step_a_server_refused_without_failing_the_request
             |c| {
                 c.ntfy_test = (
                     502,
-                    "the server answered 401 Unauthorized: {\"code\":40101}",
+                    "ntfy refused the sign-in. Check the access token, or the username and password.",
                 )
             },
             "test-ntfy",
-            "the server answered 401 Unauthorized",
+            "ntfy refused the sign-in.",
         ),
     ];
     for (tweak, step, says) in steps {
