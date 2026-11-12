@@ -97,7 +97,7 @@ async fn get_annotations(
 
 /// Outcome of [`resolve_adopted_served`] when the pair isn't ready to serve.
 enum Unready {
-    /// No prior PATCH and nothing to serve — the AC5 first-sync guard.
+    /// Nothing to serve, and no PATCH or acked non-empty set — the AC5 first-sync guard.
     NotAdopted,
     /// A resolve/fetch/adoption-check db call failed; already an HTTP response.
     Failed(Response),
@@ -105,7 +105,7 @@ enum Unready {
 use Unready::{Failed, NotAdopted};
 
 /// Resolve `uuid` to its canonical book, fetch the served annotation set, and
-/// check first-PATCH adoption — the second driver stage: canonical-uuid
+/// check first-PATCH adoption (or an acked non-empty set) — the second driver stage: canonical-uuid
 /// resolution plus the adoption gate that must run before any ETag is
 /// computed. `Ok(None)` is an unknown book (404); `Err(NotAdopted)` is the
 /// AC5 guard against wiping a device's pre-wireless backlog by omission.
@@ -157,13 +157,19 @@ async fn resolve_adopted_served(
     // anywhere else — must not receive an empty-but-valid set: the device
     // reconciles by omission, so that answer would erase its pre-wireless
     // backlog (AC5). A non-empty set is safe for any device, which is what
-    // lets a second or factory-reset device receive existing annotations.
-    let adopted =
-        match db::kobo::annotations::is_adopted(state.pool(), auth.device_id, &canonical).await {
-            Ok(a) => a || !served.is_empty(),
-            Err(e) => return Err(Failed(internal("reading-services adoption check", e))),
-        };
-    if !adopted {
+    // lets a second or factory-reset device receive existing annotations, and so
+    // does an empty one to a device that already acked a non-empty set.
+    let servable = match db::kobo::annotations::may_serve_empty(
+        state.pool(),
+        auth.device_id,
+        &canonical,
+    )
+    .await
+    {
+        Ok(a) => a || !served.is_empty(),
+        Err(e) => return Err(Failed(internal("reading-services adoption check", e))),
+    };
+    if !servable {
         return Err(NotAdopted);
     }
     Ok(Some((canonical, served)))
