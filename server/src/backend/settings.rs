@@ -1,6 +1,6 @@
 //! The admin's server-configuration routes: `GET` / `POST /api/settings`, the
-//! registration, MCP, Calibre and metadata-order settings, and the scan,
-//! chapter-backfill and search-rebuild jobs.
+//! registration, MCP, Calibre, public-URL and metadata-order settings, and the
+//! scan, chapter-backfill and search-rebuild jobs.
 //!
 //! All `AdminUser`-gated. A successful settings save dispatches a
 //! `Task::Scan` on the shared worker so the indexer reflects any new library
@@ -18,7 +18,8 @@ use omnibus_db::{
 };
 use omnibus_shared::{
     is_valid_metadata_precedence, precedence_library_path, EbookConvertStatus, EbookConvertUpdate,
-    McpStatus, MetadataSource, RegistrationStatus, Settings, DEFAULT_METADATA_PRECEDENCE,
+    McpStatus, MetadataSource, PublicUrlStatus, PublicUrlUpdate, RegistrationStatus, Settings,
+    DEFAULT_METADATA_PRECEDENCE,
 };
 
 use super::{internal, AppState};
@@ -326,6 +327,62 @@ pub(super) async fn post_ebook_convert(
             (StatusCode::UNPROCESSABLE_ENTITY, message).into_response()
         }
         Err(error) => internal("save ebook-convert path", error),
+    }
+}
+
+/// Get the public server URL
+///
+/// The address readers reach the server at, for links the server sends outside the app,
+/// and where it came from: saved with `POST /api/settings/public-url`, or the
+/// `OMNIBUS_PUBLIC_URL` environment variable when none is saved. Needs an admin account.
+#[utoipa::path(
+    get,
+    path = "/api/settings/public-url",
+    tag = "Admin",
+    responses(
+        (status = 200, description = "The public URL in effect.", body = PublicUrlStatus),
+        (status = 403, description = "You aren't an admin."),
+    ),
+)]
+pub(super) async fn get_public_url(_admin: AdminUser, State(state): State<AppState>) -> Response {
+    match db::public_url_status(&state.pool).await {
+        Ok(status) => Json(status).into_response(),
+        Err(error) => internal("read public url status", error),
+    }
+}
+
+/// Set the public server URL
+///
+/// Saves the address readers reach the server at, such as `https://books.example.com`, or
+/// `https://example.com/omnibus` for a server under a sub-path. The URL is saved without its
+/// trailing slash. A null or blank `url` clears it, so the server falls back to the
+/// `OMNIBUS_PUBLIC_URL` environment variable, which it saves again when it next starts.
+/// Needs an admin account.
+#[utoipa::path(
+    post,
+    path = "/api/settings/public-url",
+    tag = "Admin",
+    request_body = PublicUrlUpdate,
+    responses(
+        (status = 200, description = "The URL is saved; the body is the public URL now in effect.", body = PublicUrlStatus),
+        (status = 403, description = "You aren't an admin."),
+        (status = 422, description = "`url` isn't an absolute `http` or `https` URL with a host, has a username, password, query or fragment, or is over 2048 bytes. The body says which, and the saved URL is unchanged."),
+    ),
+)]
+pub(super) async fn post_public_url(
+    _admin: AdminUser,
+    State(state): State<AppState>,
+    Json(update): Json<PublicUrlUpdate>,
+) -> Response {
+    match db::set_public_url(&state.pool, update.url.as_deref()).await {
+        Ok(()) => match db::public_url_status(&state.pool).await {
+            Ok(status) => Json(status).into_response(),
+            Err(error) => internal("read public url status", error),
+        },
+        Err(db::SettingsError::Validation(message)) => {
+            (StatusCode::UNPROCESSABLE_ENTITY, message).into_response()
+        }
+        Err(error) => internal("save public url", error),
     }
 }
 

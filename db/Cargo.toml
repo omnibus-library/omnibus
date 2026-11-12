@@ -169,6 +169,11 @@ uuid = { version = "1", features = ["v4", "v5"] }
 # codebase — keep it scoped to the resolver module.
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "form", "multipart", "query"] }
 urlencoding = "2"
+# The public server URL setting parses with the same `Url` reqwest re-exports;
+# the direct edge is for `url::ParseError`, whose variants reqwest doesn't
+# re-export and which give each rejection its own message. Already in
+# Cargo.lock via reqwest, so no new download.
+url = "2"
 
 # F5.9 library cleanup (#962): regex-based detectors — junk-author tooling
 # artifacts, book-title cruft prefixes/suffixes. Already present in

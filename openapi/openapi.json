@@ -7944,6 +7944,67 @@
         }
       }
     },
+    "/api/settings/public-url": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Get the public server URL",
+        "description": "The address readers reach the server at, for links the server sends outside the app,\nand where it came from: saved with `POST /api/settings/public-url`, or the\n`OMNIBUS_PUBLIC_URL` environment variable when none is saved. Needs an admin account.",
+        "operationId": "get_public_url",
+        "responses": {
+          "200": {
+            "description": "The public URL in effect.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicUrlStatus"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You aren't an admin."
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Set the public server URL",
+        "description": "Saves the address readers reach the server at, such as `https://books.example.com`, or\n`https://example.com/omnibus` for a server under a sub-path. The URL is saved without its\ntrailing slash. A null or blank `url` clears it, so the server falls back to the\n`OMNIBUS_PUBLIC_URL` environment variable, which it saves again when it next starts.\nNeeds an admin account.",
+        "operationId": "post_public_url",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublicUrlUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The URL is saved; the body is the public URL now in effect.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicUrlStatus"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You aren't an admin."
+          },
+          "422": {
+            "description": "`url` isn't an absolute `http` or `https` URL with a host, has a username, password, query or fragment, or is over 2048 bytes. The body says which, and the saved URL is unchanged."
+          }
+        }
+      }
+    },
     "/api/settings/registration": {
       "post": {
         "tags": [
@@ -15691,6 +15752,48 @@
           }
         ],
         "description": "What one provider did for an edition search. `kind` tells apart a provider that had\nnothing, one the server didn't ask, and one that didn't answer, so an outage never\nlooks like an empty result."
+      },
+      "PublicUrlSource": {
+        "type": "string",
+        "description": "Where the public server URL in effect comes from: `settings` when saved through the\nAPI, `env` when read from the server's `OMNIBUS_PUBLIC_URL` environment variable\nbecause none is saved, or `none` when neither is set.",
+        "enum": [
+          "settings",
+          "env",
+          "none"
+        ]
+      },
+      "PublicUrlStatus": {
+        "type": "object",
+        "description": "The address readers reach the server at, for links the server sends outside the app.",
+        "required": [
+          "source"
+        ],
+        "properties": {
+          "source": {
+            "$ref": "#/components/schemas/PublicUrlSource",
+            "description": "Where `url` comes from."
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The public URL in effect, with no trailing slash. Null when none is set."
+          }
+        }
+      },
+      "PublicUrlUpdate": {
+        "type": "object",
+        "description": "The public server URL to save.",
+        "properties": {
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The address readers reach the server at, such as `https://books.example.com`: an\nabsolute `http` or `https` URL of up to 2048 bytes, with no username, password,\nquery or fragment. A path is kept, for a server under a sub-path such as\n`https://example.com/omnibus`, and a trailing slash is dropped. Null or blank clears\nthe saved URL."
+          }
+        }
       },
       "RankedEntity": {
         "type": "object",

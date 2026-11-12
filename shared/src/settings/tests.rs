@@ -256,3 +256,16 @@ fn precedence_library_path_rejects_an_unrecognized_key() {
         "library must be \"ebook\" or \"audiobook\""
     );
 }
+
+#[test]
+fn public_url_status_serializes_each_source_as_its_snake_case_token() {
+    for (source, token) in [
+        (PublicUrlSource::Settings, "settings"),
+        (PublicUrlSource::Env, "env"),
+        (PublicUrlSource::None, "none"),
+    ] {
+        let status = PublicUrlStatus { url: None, source };
+        let json = serde_json::to_value(&status).unwrap();
+        assert_eq!(json, serde_json::json!({ "url": null, "source": token }));
+    }
+}

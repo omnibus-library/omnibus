@@ -9,16 +9,17 @@ use std::path::Path;
 
 pub use omnibus_shared::{
     is_plausible_email, DownloadClientKind, EbookConvertStatus, GoogleBooksKeyStatus,
-    HardcoverKeyStatus, RequestsSettingsStatus, RequestsSettingsUpdate, Settings, SmtpConfigStatus,
-    SmtpConfigUpdate, SmtpSecurity, EMAIL_MAX_LEN, GOOGLE_BOOKS_API_KEY_MAX_LEN,
-    HARDCOVER_API_KEY_MAX_LEN, REQUESTS_FIELD_MAX_LEN, REQUESTS_SECRET_MAX_LEN, SMTP_FIELD_MAX_LEN,
-    SMTP_PASSWORD_MAX_LEN,
+    HardcoverKeyStatus, PublicUrlSource, PublicUrlStatus, RequestsSettingsStatus,
+    RequestsSettingsUpdate, Settings, SmtpConfigStatus, SmtpConfigUpdate, SmtpSecurity,
+    EMAIL_MAX_LEN, GOOGLE_BOOKS_API_KEY_MAX_LEN, HARDCOVER_API_KEY_MAX_LEN, PUBLIC_URL_MAX_LEN,
+    REQUESTS_FIELD_MAX_LEN, REQUESTS_SECRET_MAX_LEN, SMTP_FIELD_MAX_LEN, SMTP_PASSWORD_MAX_LEN,
 };
 use omnibus_shared::{is_valid_metadata_precedence, MetadataSource, DEFAULT_METADATA_PRECEDENCE};
 use sqlx::{SqlitePool, Transaction};
 
 mod ebook_convert;
 mod keys;
+mod public_url;
 mod requests;
 mod secret_key;
 
@@ -31,6 +32,10 @@ pub use keys::{
     get_hardcover_api_key, google_books_key_status, hardcover_key_status, provider_keys,
     seed_google_books_key_from_env, seed_hardcover_key_from_env, set_google_books_api_key,
     set_hardcover_api_key,
+};
+pub use public_url::{
+    effective_public_url, get_public_url, normalize_public_url, public_url_status,
+    seed_public_url_from_env, set_public_url,
 };
 pub use requests::{
     effective_requests_config, is_plain_http_url, requests_settings_status, set_requests_settings,
