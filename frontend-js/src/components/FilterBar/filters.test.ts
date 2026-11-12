@@ -49,14 +49,18 @@ describe("withFieldClause", () => {
 
 describe("togglePick", () => {
   it("unticks a value that differs only in case", () => {
-    expect(togglePick(["Cozy", "dark"], "cozy")).toEqual(["dark"]);
+    expect(togglePick(["Cozy", "dark"], "cozy", MAX_FILTER_VALUES)).toEqual([
+      "dark",
+    ]);
   });
 
   it("refuses a new pick past the value cap but still allows an untick", () => {
     const full = Array.from({ length: MAX_FILTER_VALUES }, (_, i) => `v${i}`);
 
-    expect(togglePick(full, "extra")).toBe(full);
-    expect(togglePick(full, "v0")).toHaveLength(MAX_FILTER_VALUES - 1);
+    expect(togglePick(full, "extra", MAX_FILTER_VALUES)).toBe(full);
+    expect(togglePick(full, "v0", MAX_FILTER_VALUES)).toHaveLength(
+      MAX_FILTER_VALUES - 1,
+    );
   });
 
   it("refuses a new pick past a smaller limit", () => {

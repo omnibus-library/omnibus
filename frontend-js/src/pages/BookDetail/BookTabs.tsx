@@ -8,7 +8,7 @@ import {
   useState,
 } from "react";
 import { prefersReducedMotion } from "../../motion";
-import { turnMode, turnPageThrough } from "../../viewTransition";
+import { turnMode, turnPage } from "../../viewTransition";
 
 export const TABS = [
   { id: "overview", label: "Overview" },
@@ -38,7 +38,7 @@ export function useBookTabs() {
       );
       target.current = next;
       const css = turnMode() === "css";
-      const turn = turnPageThrough(() => {
+      const turn = turnPage(() => {
         setTab(next);
         setEntering(css ? next : null);
       });
@@ -46,7 +46,9 @@ export function useBookTabs() {
     },
     [],
   );
-  return { tab, entering, selectTab };
+  /** Whether `id` is still the tab last asked for, so a caller that waited on a turn can tell the reader moved on. */
+  const stillOn = useCallback((id: TabId) => target.current === id, []);
+  return { tab, entering, selectTab, stillOn };
 }
 
 /** The id of a tab, for a caller that moves focus onto it. */

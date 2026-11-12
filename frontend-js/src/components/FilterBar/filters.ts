@@ -8,7 +8,8 @@ export const MAX_FILTER_TOTAL_VALUES = 200;
 export const MAX_SHOWN_OPTIONS = 200;
 /** How many rows the tag and genre clouds stop at. */
 export const CLOUD_LIMIT = 500;
-const MAX_VALUE_LENGTH = 512;
+/** The longest value a filter may hold, in characters. */
+export const MAX_VALUE_LENGTH = 512;
 
 /** Room a full menu needs under its facet: mode, search, list, footer and gaps. */
 const MENU_ROOM = 460;
@@ -98,7 +99,7 @@ export function pickLimit(clauses: FilterClause[], field: FilterField): number {
 export function togglePick(
   picked: string[],
   value: string,
-  limit = MAX_FILTER_VALUES,
+  limit: number,
 ): string[] {
   if (picked.some((p) => sameName(p, value))) {
     return picked.filter((p) => !sameName(p, value));

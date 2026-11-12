@@ -1,7 +1,11 @@
 import { useCallback, useRef, useState } from "react";
 import { z } from "zod";
 import { type FilterClause, FilterClauseSchema, SortDir, SortKey } from "./api";
-import { MAX_FILTER_TOTAL_VALUES } from "./components/FilterBar/filters";
+import {
+  MAX_FILTER_TOTAL_VALUES,
+  MAX_FILTER_VALUES,
+  MAX_VALUE_LENGTH,
+} from "./components/FilterBar/filters";
 
 // Saved in localStorage per route. Anything unreadable is the default.
 
@@ -97,8 +101,8 @@ export function loadPrefs(path: string): Prefs {
     ] as const
   ).flatMap(([field, values]): FilterClause[] => {
     const kept = values
-      .filter((v) => v.trim() !== "" && [...v].length <= 512)
-      .slice(0, Math.min(64, budget));
+      .filter((v) => v.trim() !== "" && [...v].length <= MAX_VALUE_LENGTH)
+      .slice(0, Math.min(MAX_FILTER_VALUES, budget));
     budget -= kept.length;
     return kept.length > 0 ? [{ field, mode: "include", values: kept }] : [];
   });

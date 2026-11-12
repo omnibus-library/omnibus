@@ -386,6 +386,36 @@ export const ManyReviewsLinkTurnsWithoutMorphingThePanel: Story = {
   },
 };
 
+export const AnotherTabPickedDuringTheTurnKeepsFocus: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...reviewHandlers({
+        mine: aWireReview({ stars: 4 }),
+        others: Array.from({ length: 22 }, (_, i) =>
+          aWireOtherReview({ user_id: 100 + i, username: `reader-${i}` }),
+        ),
+      }),
+      ...bookDetailHandlers(BOOK),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "23 reviews" }),
+    );
+    // The reader changes their mind while the first turn is still being drawn.
+    await userEvent.click(canvas.getByRole("tab", { name: "Files & Details" }));
+    const files = canvas.getByRole("tab", { name: "Files & Details" });
+    await waitFor(() => expect(files).toHaveAttribute("aria-selected", "true"));
+    await scrollSettled();
+
+    // Neither the first turn's focus nor its scroll follows them to the Reviews tab.
+    await expect(files).toHaveFocus();
+    await expect(
+      canvas.getByRole("tab", { name: "Reviews" }),
+    ).not.toHaveFocus();
+  },
+};
+
 const patches: (ReviewPatch | "delete")[] = [];
 
 export const AHeroTapShowsOnTheReviewsTabToo: Story = {

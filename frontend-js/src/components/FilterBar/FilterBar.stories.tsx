@@ -373,6 +373,42 @@ export const AtClauseCap: Story = {
   },
 };
 
+const GENRES = Array.from({ length: 10 }, (_, i) => ({
+  name: `Genre ${i}`,
+  count: 10 - i,
+}));
+
+export const AtTotalValueCap: Story = {
+  // 192 values in the other clauses leave a genre clause room for 8 of the 200.
+  args: {
+    initial: ["author", "series", "tag"].map((field) =>
+      include(
+        field as FilterClause["field"],
+        ...Array.from({ length: 64 }, (_, i) => `${field}-${i}`),
+      ),
+    ),
+  },
+  beforeEach({ msw }) {
+    msw.use(...filterOptionHandlers({ tags: TAGS, genres: GENRES }));
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(canvas.getByRole("button", { name: /^Genre/ }));
+    const dialog = await canvas.findByRole("dialog");
+    const box = (i: number) =>
+      within(dialog).findByRole("checkbox", { name: `Genre ${i}` });
+
+    for (let i = 0; i < 8; i++) {
+      await userEvent.click(await box(i));
+    }
+
+    await expect(await box(8)).toBeDisabled();
+    await expect(await box(0)).toBeEnabled();
+    await expect(
+      within(dialog).getByText("At most 200 values across all filters"),
+    ).toBeVisible();
+  },
+};
+
 export const OptionsLoading: Story = {
   beforeEach({ msw }) {
     msw.use(hanging("/api/tags"));

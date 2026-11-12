@@ -15,7 +15,7 @@ export function turnMode(): TurnMode {
  * Runs `update` (a React state change) inside a View Transition when there is one. `updated` resolves
  * once the DOM shows it, `finished` once the turn has been drawn to its end.
  */
-export function turnPageThrough(update: () => void): {
+export function turnPage(update: () => void): {
   updated: Promise<void>;
   finished: Promise<void>;
 } {
@@ -31,7 +31,3 @@ export function turnPageThrough(update: () => void): {
   const finished = transition.finished.catch(() => {});
   return { updated: transition.updateCallbackDone, finished };
 }
-
-/** Runs `update` inside a View Transition when there is one; resolves once the DOM shows it. */
-export const turnPage = (update: () => void): Promise<void> =>
-  turnPageThrough(update).updated;
