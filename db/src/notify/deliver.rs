@@ -129,12 +129,7 @@ fn unreachable_cause(
     {
         return Unreachable::Tls;
     }
-    // The resolver's error types are private; these are their fixed messages, in hyper-util's
-    // connector and in reqwest's resolver.
-    if chain.iter().any(|c| {
-        let text = c.to_string();
-        text == "dns error" || text == "error resolving DNS"
-    }) {
+    if e.is_dns() {
         return Unreachable::Dns;
     }
     if e.is_connect() {
