@@ -136,6 +136,10 @@ export const SavesTheUrlTheServerKeeps: Story = {
     await expect(saved).toEqual(["https://books.example.com/"]);
     // The field shows the address as the server stored it.
     await waitFor(() => expect(field).toHaveValue("https://books.example.com"));
+
+    // "Saved" describes the field before this edit, so it goes with the edit.
+    await userEvent.type(field, "/omnibus");
+    await expect(message).toBeEmptyDOMElement();
   },
 };
 

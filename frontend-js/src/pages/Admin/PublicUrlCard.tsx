@@ -141,6 +141,8 @@ export function PublicUrlCard() {
             onChange={(e) => {
               setTyped(e.target.value);
               setFieldError(null);
+              // "Saved" described the field before this edit.
+              setStatus(null);
             }}
           />
           {hint && (

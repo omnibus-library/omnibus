@@ -775,6 +775,27 @@ export type NotificationWrites = {
   tested: unknown[];
 };
 
+/**
+ * Why the server would refuse to lend `was`'s saved secret to `input`, which leaves it out:
+ * it goes only to the address it was saved for, and a password only to its username too.
+ */
+function lentSecretRefusal(
+  input: NotificationConnectionInput["settings"],
+  was: NotificationConnection["settings"],
+): string | null {
+  const urlChanged = input.server_url.trim() !== was.server_url;
+  if (input.auth === "token" && !input.token && was.token_set && urlChanged) {
+    return "enter the token again: the server URL changed";
+  }
+  if (input.auth === "basic" && !input.password && was.password_set) {
+    if (urlChanged) return "enter the password again: the server URL changed";
+    if ((input.username ?? "").trim() !== (was.username ?? "")) {
+      return "enter the password again: the username changed";
+    }
+  }
+  return null;
+}
+
 /** A saved connection's settings after `input` replaces them: a secret left out is kept while the mode stays. */
 function storedSettings(
   input: NotificationConnectionInput["settings"],
@@ -784,7 +805,8 @@ function storedSettings(
     was?.auth === mode && set === true;
   return {
     kind: "ntfy",
-    server_url: input.server_url.trim().replace(/\/+$/, ""),
+    // Kept as typed, trailing slash and all, as the server keeps it.
+    server_url: input.server_url.trim(),
     topic: input.topic.trim(),
     auth: input.auth,
     username: input.auth === "basic" ? (input.username ?? null) : null,
@@ -803,6 +825,7 @@ function storedSettings(
 /**
  * The `/api/admin/notifications` routes over a list of connections: a create adds one, a
  * save replaces one (404 once it is gone), a delete removes one and a test answers 204.
+ * A save or test that leaves a secret out where the server wouldn't lend it answers 422.
  * Secrets are never sent back, only whether one is set. The handler records every write.
  */
 export function notificationHandlers(
@@ -852,6 +875,8 @@ export function notificationHandlers(
         const was = connections.find((c) => c.id === id);
         if (!was) return gone();
         const input = NotificationConnectionInput.parse(body);
+        const refusal = lentSecretRefusal(input.settings, was.settings);
+        if (refusal) return new HttpResponse(refusal, { status: 422 });
         const saved: NotificationConnection = {
           ...was,
           name: input.name.trim(),
@@ -873,7 +898,11 @@ export function notificationHandlers(
     http.post("/api/admin/notifications/test", async ({ request }) => {
       const body = await request.json();
       writes.tested?.push(body);
-      NotificationTest.parse(body);
+      const test = NotificationTest.parse(body);
+      const was = connections.find((c) => c.id === test.id);
+      if (test.id != null && !was) return gone();
+      const refusal = was && lentSecretRefusal(test.settings, was.settings);
+      if (refusal) return new HttpResponse(refusal, { status: 422 });
       return new HttpResponse(null, { status: 204 });
     }),
   ];

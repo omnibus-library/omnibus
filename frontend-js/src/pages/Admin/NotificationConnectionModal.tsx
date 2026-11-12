@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import {
   addNotificationConnection,
@@ -31,6 +31,8 @@ import {
   PRIORITIES,
   SETTINGS_FIELDS,
   savedSecretsOf,
+  secretRetypeHint,
+  secretState,
   testOf,
 } from "./notifications";
 import { ModalShell } from "./UserModals";
@@ -68,10 +70,35 @@ export function NotificationConnectionModal({
   const form = useForm<ConnectionDraft, unknown, NotificationConnectionInput>({
     resolver: zodResolver(schema),
     defaultValues: editing ? draftOf(editing) : blankDraft(available),
+    // Re-checking is the watcher's below, so a Save and a Send test behave alike.
+    reValidateMode: "onSubmit",
   });
   const { errors } = form.formState;
+  // Counts edits, so a test answer that lands after one describes a draft that is gone.
+  const revision = useRef(0);
+  // Set by the first Save or Send test: from then on, edits re-check the fields.
+  const attempted = useRef(false);
+  useEffect(() => {
+    const watcher = form.watch((_values, { name }) => {
+      if (!name) return;
+      revision.current += 1;
+      // A result describes the draft it was given, not this one.
+      setTestStatus(null);
+      form.clearErrors("root");
+      if (!attempted.current) return;
+      // The field edited, and any still refused: a fixed one clears, nothing untouched is newly refused.
+      const field = name.split(".")[0] as DraftField;
+      const failing = Object.keys(form.formState.errors).filter(
+        (key): key is DraftField => key !== "root",
+      );
+      void form.trigger([...new Set([field, ...failing])]);
+    });
+    return () => watcher.unsubscribe();
+  }, [form]);
 
   const save = useMutation({
+    // The variables carry any secret typed, so they leave the cache with the mutation.
+    gcTime: 0,
     mutationFn: (input: NotificationConnectionInput) =>
       editing
         ? saveNotificationConnection(editing.id, input)
@@ -89,29 +116,50 @@ export function NotificationConnectionModal({
   });
   const test = useMutation({
     mutationFn: sendTestNotification,
+    gcTime: 0,
     onMutate: () => setTestStatus(null),
-    onSuccess: () =>
-      setTestStatus({ message: "Test notification sent.", error: false }),
-    onError: (error) => {
-      if (isGone(error)) {
-        onGone();
-        return;
-      }
-      setTestStatus({ message: `Test failed: ${error.message}`, error: true });
-    },
   });
 
-  const auth = form.watch("auth");
-  const events = form.watch("events");
-  // The saved secret only stands for the mode it was saved in.
-  const keepsToken = saved.token && auth === "token";
-  const keepsPassword = saved.password && auth === "basic";
+  const [auth, events, serverUrl, username] = form.watch([
+    "auth",
+    "events",
+    "server_url",
+    "username",
+  ]);
+  const shown = { auth, server_url: serverUrl, username };
+  const tokenState = secretState(shown, saved, "token");
+  const passwordState = secretState(shown, saved, "password");
+  const keepsToken = tokenState === "kept";
+  const keepsPassword = passwordState === "kept";
+  // The reason is the refusal's text too, so it isn't said twice.
+  const tokenHint = errors.token ? null : secretRetypeHint(tokenState, "token");
+  const passwordHint = errors.password
+    ? null
+    : secretRetypeHint(passwordState, "password");
 
   const sendTest = async () => {
     if (test.isPending) return;
+    attempted.current = true;
     // A test needs only the settings: a missing name isn't a reason to refuse it.
-    if (!(await form.trigger(SETTINGS_FIELDS))) return;
-    test.mutate(testOf(form.getValues(), editing?.id ?? null));
+    if (!(await form.trigger(SETTINGS_FIELDS, { shouldFocus: true }))) {
+      setTestStatus({
+        message: "Fix the fields above before sending a test.",
+        error: true,
+      });
+      return;
+    }
+    const sentAt = revision.current;
+    const current = (status: Status) => {
+      if (revision.current === sentAt) setTestStatus(status);
+    };
+    test.mutate(testOf(form.getValues(), editing?.id ?? null), {
+      onSuccess: () =>
+        current({ message: "Test notification sent.", error: false }),
+      onError: (error) => {
+        if (isGone(error)) onGone();
+        else current({ message: `Test failed: ${error.message}`, error: true });
+      },
+    });
   };
 
   const toggleEvent = (event: NotificationEvent, on: boolean) =>
@@ -149,14 +197,18 @@ export function NotificationConnectionModal({
       title={editing ? `Edit ${editing.name}` : "New ntfy connection"}
       testId="notification-connection-modal"
       busy={save.isPending || form.formState.isDirty}
+      locked={save.isPending}
       onClose={onClose}
     >
       <form
         className="settings-form notify-form"
         noValidate
-        onSubmit={form.handleSubmit((input) => {
-          if (!save.isPending) save.mutate(input);
-        })}
+        onSubmit={(e) => {
+          attempted.current = true;
+          void form.handleSubmit((input) => {
+            if (!save.isPending) save.mutate(input);
+          })(e);
+        }}
       >
         <div className="settings-field">
           <label htmlFor={id("name")}>Name</label>
@@ -222,7 +274,7 @@ export function NotificationConnectionModal({
               placeholder={
                 keepsToken ? "Leave blank to keep the saved token" : "tk_…"
               }
-              {...described("token")}
+              {...described("token", tokenHint !== null)}
               {...form.register("token")}
             />
             {keepsToken && (
@@ -232,6 +284,11 @@ export function NotificationConnectionModal({
                 detail="A token is saved"
                 unconfigured=""
               />
+            )}
+            {tokenHint && (
+              <p className="settings-hint" id={`${id("token")}-hint`}>
+                {tokenHint}
+              </p>
             )}
             {refusal("token")}
           </div>
@@ -261,7 +318,7 @@ export function NotificationConnectionModal({
                 placeholder={
                   keepsPassword ? "Leave blank to keep the saved password" : ""
                 }
-                {...described("password")}
+                {...described("password", passwordHint !== null)}
                 {...form.register("password")}
               />
               {keepsPassword && (
@@ -271,6 +328,11 @@ export function NotificationConnectionModal({
                   detail="A password is saved"
                   unconfigured=""
                 />
+              )}
+              {passwordHint && (
+                <p className="settings-hint" id={`${id("password")}-hint`}>
+                  {passwordHint}
+                </p>
               )}
               {refusal("password")}
             </div>
@@ -393,7 +455,7 @@ export function NotificationConnectionModal({
               busyLabel="Sending…"
             />
           </Button>
-          <Button variant="ghost" onClick={onClose}>
+          <Button variant="ghost" disabled={save.isPending} onClick={onClose}>
             Cancel
           </Button>
           <Button

@@ -5,6 +5,7 @@ import {
   type ConnectionDraft,
   clipError,
   connectionInputOf,
+  connectionKey,
   connectionSchema,
   deliveryLine,
   draftOf,
@@ -16,6 +17,8 @@ import {
   postsTo,
   savedSecretsOf,
   savedTestOf,
+  secretRetypeHint,
+  secretState,
   settingsInputOf,
   testOf,
   toggledInput,
@@ -261,6 +264,8 @@ describe("savedSecretsOf", () => {
     expect(savedSecretsOf(aConnection())).toEqual({
       token: true,
       password: false,
+      serverUrl: "https://ntfy.sh",
+      username: "",
     });
   });
 
@@ -277,7 +282,113 @@ describe("savedSecretsOf", () => {
           },
         ),
       ),
-    ).toEqual({ token: false, password: true });
+    ).toEqual({
+      token: false,
+      password: true,
+      serverUrl: "https://ntfy.sh",
+      username: "ada",
+    });
+  });
+});
+
+describe("secretState", () => {
+  const TOKEN = savedSecretsOf(aConnection());
+  const BASIC = savedSecretsOf(
+    aConnection(
+      {},
+      { auth: "basic", username: "ada", token_set: false, password_set: true },
+    ),
+  );
+
+  it("keeps the saved token while the address is the one it was saved for", () => {
+    expect(secretState({ ...draftOf(aConnection()) }, TOKEN, "token")).toBe(
+      "kept",
+    );
+  });
+
+  it("ignores whitespace around the address", () => {
+    expect(
+      secretState(
+        { ...draftOf(aConnection()), server_url: " https://ntfy.sh " },
+        TOKEN,
+        "token",
+      ),
+    ).toBe("kept");
+  });
+
+  it.each([
+    ["another host", "https://ntfy.example.com"],
+    ["an added trailing slash", "https://ntfy.sh/"],
+  ])("lets the token go for %s", (_condition, server_url) => {
+    expect(
+      secretState({ ...draftOf(aConnection()), server_url }, TOKEN, "token"),
+    ).toBe("server_url_changed");
+  });
+
+  it("keeps the token again once the address is changed back", () => {
+    const draft = { ...draftOf(aConnection()), server_url: "https://x.test" };
+    expect(secretState(draft, TOKEN, "token")).toBe("server_url_changed");
+    expect(
+      secretState({ ...draft, server_url: "https://ntfy.sh" }, TOKEN, "token"),
+    ).toBe("kept");
+  });
+
+  it("lets the password go when the username changes", () => {
+    const draft = draftOf(
+      aConnection(
+        {},
+        {
+          auth: "basic",
+          username: "ada",
+          token_set: false,
+          password_set: true,
+        },
+      ),
+    );
+    expect(secretState(draft, BASIC, "password")).toBe("kept");
+    expect(
+      secretState({ ...draft, username: "grace" }, BASIC, "password"),
+    ).toBe("username_changed");
+  });
+
+  it("names the address first when both changed", () => {
+    const draft = {
+      ...draftOf(aConnection()),
+      auth: "basic" as const,
+      server_url: "https://x.test",
+      username: "grace",
+    };
+    expect(secretState(draft, BASIC, "password")).toBe("server_url_changed");
+  });
+
+  it("has nothing to keep in another mode or for a new connection", () => {
+    expect(
+      secretState(
+        { ...draftOf(aConnection()), auth: "basic" },
+        TOKEN,
+        "password",
+      ),
+    ).toBe("none");
+    expect(secretState(DRAFT, NO_SAVED_SECRETS, "token")).toBe("none");
+  });
+});
+
+describe("secretRetypeHint", () => {
+  it.each([
+    [
+      "server_url_changed",
+      "token",
+      "The server URL changed, so enter the token again.",
+    ],
+    [
+      "username_changed",
+      "password",
+      "The username changed, so enter the password again.",
+    ],
+    ["kept", "token", null],
+    ["none", "password", null],
+  ] as const)("says why for %s (%s)", (state, secret, hint) => {
+    expect(secretRetypeHint(state, secret)).toBe(hint);
   });
 });
 
@@ -334,7 +445,49 @@ describe("draftProblems", () => {
     expect(
       draftProblems(
         { ...DRAFT, auth: "token" },
-        { token: true, password: false },
+        { ...NO_SAVED_SECRETS, token: true, serverUrl: "https://ntfy.sh" },
+      ),
+    ).toEqual({});
+  });
+
+  it("asks for the token again once the server URL changed", () => {
+    const saved = savedSecretsOf(aConnection());
+
+    expect(
+      draftProblems(
+        { ...draftOf(aConnection()), server_url: "https://ntfy.example.com" },
+        saved,
+      ),
+    ).toEqual({
+      token: "The server URL changed, so enter the token again.",
+    });
+  });
+
+  it("asks for the password again once the username changed", () => {
+    const connection = aConnection(
+      {},
+      { auth: "basic", username: "ada", token_set: false, password_set: true },
+    );
+
+    expect(
+      draftProblems(
+        { ...draftOf(connection), username: "grace" },
+        savedSecretsOf(connection),
+      ),
+    ).toEqual({
+      password: "The username changed, so enter the password again.",
+    });
+  });
+
+  it("accepts a retyped token at a new server URL", () => {
+    expect(
+      draftProblems(
+        {
+          ...draftOf(aConnection()),
+          server_url: "https://ntfy.example.com",
+          token: "tk_new",
+        },
+        savedSecretsOf(aConnection()),
       ),
     ).toEqual({});
   });
@@ -419,11 +572,37 @@ describe("isGone", () => {
   });
 });
 
+describe("connectionKey", () => {
+  it("stays the same when only the last delivery moves", () => {
+    expect(
+      connectionKey(
+        aConnection({ last_delivery: { at: 1, ok: true, error: null } }),
+      ),
+    ).toBe(connectionKey(aConnection()));
+  });
+
+  it.each([
+    ["is renamed", aConnection({ name: "Tablet" })],
+    ["is turned off", aConnection({ enabled: false })],
+    ["moves server", aConnection({}, { server_url: "https://x.test" })],
+  ])("changes when the connection %s", (_condition, changed) => {
+    expect(connectionKey(changed)).not.toBe(connectionKey(aConnection()));
+  });
+});
+
 describe("postsTo", () => {
   it("names the server without its scheme, then the topic", () => {
     expect(
       postsTo(
         aConnection({}, { server_url: "https://example.com/ntfy" }).settings,
+      ),
+    ).toBe("example.com/ntfy/omnibus-requests");
+  });
+
+  it("reads an address saved with a trailing slash the same way", () => {
+    expect(
+      postsTo(
+        aConnection({}, { server_url: "https://example.com/ntfy/" }).settings,
       ),
     ).toBe("example.com/ntfy/omnibus-requests");
   });

@@ -20,6 +20,7 @@ import { formatStarted, nowSecs } from "../../format";
 import { NotificationConnectionModal } from "./NotificationConnectionModal";
 import {
   clipError,
+  connectionKey,
   deliveryLine,
   isGone,
   postsTo,
@@ -98,10 +99,16 @@ function ConnectionRow({
 }: RowProps) {
   const nameId = useId();
   const { name } = connection;
-  const [status, setStatus] = useState<Status | null>(null);
+  const key = connectionKey(connection);
+  // A status names the connection as it read when the action started, and goes once it reads otherwise.
+  const [noted, setNoted] = useState<{ status: Status; key: string } | null>(
+    null,
+  );
+  const status = noted?.key === key ? noted.status : null;
+  const note = (status: Status) => setNoted({ status, key });
   const refused = (lead: string) => (error: Error) => {
     if (isGone(error)) onGone(connection);
-    else setStatus({ message: `${lead}: ${error.message}`, error: true });
+    else note({ message: `${lead}: ${error.message}`, error: true });
   };
   const toggle = useMutation({
     mutationFn: (enabled: boolean) =>
@@ -109,17 +116,12 @@ function ConnectionRow({
         connection.id,
         toggledInput(connection, enabled),
       ),
-    onMutate: () => setStatus(null),
+    onMutate: () => setNoted(null),
     onSuccess: onChanged,
-    onError: (error, enabled) =>
-      refused(`Couldn’t turn ${enabled ? "on" : "off"} ${name}`)(error),
   });
   const test = useMutation({
     mutationFn: () => sendTestNotification(savedTestOf(connection)),
-    onMutate: () => setStatus(null),
-    onSuccess: () =>
-      setStatus({ message: "Test notification sent.", error: false }),
-    onError: refused("Test failed"),
+    onMutate: () => setNoted(null),
   });
   // The switch shows where it is going while the save is out.
   const on =
@@ -150,7 +152,14 @@ function ConnectionRow({
             aria-checked={on}
             disabled={busy || toggle.isPending}
             aria-busy={toggle.isPending}
-            onChange={(e) => toggle.mutate(e.target.checked)}
+            onChange={(e) => {
+              const enabled = e.target.checked;
+              toggle.mutate(enabled, {
+                onError: refused(
+                  `Couldn’t turn ${enabled ? "on" : "off"} ${name}`,
+                ),
+              });
+            }}
           />
           <span aria-hidden="true">{on ? "On" : "Off"}</span>
         </label>
@@ -166,7 +175,13 @@ function ConnectionRow({
           disabled={working}
           aria-busy={test.isPending}
           aria-label={`Test ${name}`}
-          onClick={() => test.mutate()}
+          onClick={() =>
+            test.mutate(undefined, {
+              onSuccess: () =>
+                note({ message: "Test notification sent.", error: false }),
+              onError: refused("Test failed"),
+            })
+          }
         >
           <BusyLabel busy={test.isPending} label="Test" busyLabel="Sending…" />
         </Button>

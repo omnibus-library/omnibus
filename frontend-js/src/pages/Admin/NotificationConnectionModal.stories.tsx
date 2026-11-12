@@ -246,6 +246,177 @@ export const SwitchingToAPasswordAsksForOne: Story = {
   },
 };
 
+export const ChangingTheServerAsksForTheTokenAgain: Story = {
+  args: { editing: PHONE },
+  play: async ({ args, canvas, userEvent }) => {
+    const dialog = await dialogOf(canvas, "Edit Phone");
+    const scope = within(dialog);
+    const server = scope.getByLabelText("Server URL");
+    const token = scope.getByLabelText("Access token");
+    await expect(scope.getByTestId("notify-token-status")).toHaveTextContent(
+      "A token is saved",
+    );
+
+    await userEvent.clear(server);
+    await userEvent.type(server, "https://ntfy.example.com");
+    // The saved token only goes to the address it was saved for.
+    await expect(
+      scope.queryByTestId("notify-token-status"),
+    ).not.toBeInTheDocument();
+    await expect(token).not.toHaveAttribute(
+      "placeholder",
+      "Leave blank to keep the saved token",
+    );
+    await expect(token).toHaveAccessibleDescription(
+      "The server URL changed, so enter the token again.",
+    );
+
+    await userEvent.click(scope.getByRole("button", { name: SAVE }));
+    await waitFor(() => expect(token).toHaveAttribute("aria-invalid", "true"));
+    await expect(token).toHaveAccessibleDescription(
+      "The server URL changed, so enter the token again.",
+    );
+    await userEvent.click(scope.getByRole("button", { name: TEST_BUTTON }));
+    await waitFor(() =>
+      expect(scope.getByTestId("notify-test-status")).toHaveTextContent(
+        "Fix the fields above before sending a test.",
+      ),
+    );
+    await expect(writes.updated).toEqual([]);
+    await expect(writes.tested).toEqual([]);
+    await expect(args.onSaved).not.toHaveBeenCalled();
+
+    // Back at the saved address, a blank field keeps the token again.
+    await userEvent.clear(server);
+    await userEvent.type(server, "https://ntfy.sh");
+    await waitFor(() => expect(token).toHaveAttribute("aria-invalid", "false"));
+    await expect(scope.getByTestId("notify-token-status")).toHaveTextContent(
+      "A token is saved",
+    );
+    await userEvent.click(scope.getByRole("button", { name: SAVE }));
+    await waitFor(() => expect(args.onSaved).toHaveBeenCalledOnce());
+    await expect(writes.updated[0]?.body).not.toHaveProperty("settings.token");
+  },
+};
+
+export const ChangingTheUsernameAsksForThePasswordAgain: Story = {
+  args: {
+    editing: aWireNotificationConnection(
+      { id: 8, name: "Laptop" },
+      { auth: "basic", username: "ada", token_set: false, password_set: true },
+    ),
+  },
+  play: async ({ canvas, userEvent }) => {
+    const dialog = await dialogOf(canvas, "Edit Laptop");
+    const scope = within(dialog);
+    const password = scope.getByLabelText("Password");
+    await expect(scope.getByTestId("notify-password-status")).toBeVisible();
+    await userEvent.type(scope.getByLabelText("Username"), "x");
+
+    await expect(
+      scope.queryByTestId("notify-password-status"),
+    ).not.toBeInTheDocument();
+    await expect(password).toHaveAccessibleDescription(
+      "The username changed, so enter the password again.",
+    );
+  },
+};
+
+export const SendingATestWithAMissingFieldSaysWhy: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const dialog = await dialogOf(canvas, "New ntfy connection");
+    const scope = within(dialog);
+    await userEvent.type(scope.getByLabelText("Server URL"), "https://ntfy.sh");
+    await userEvent.click(scope.getByRole("button", { name: TEST_BUTTON }));
+
+    const topic = scope.getByLabelText("Topic");
+    await waitFor(() => expect(topic).toHaveFocus());
+    await expect(topic).toHaveAttribute("aria-invalid", "true");
+    const status = scope.getByTestId("notify-test-status");
+    await expect(status).toHaveAttribute("role", "status");
+    await expect(status).toHaveTextContent(
+      "Fix the fields above before sending a test.",
+    );
+    await expect(status).toHaveClass("error");
+    // The name isn't a reason to refuse a test.
+    await expect(scope.getByLabelText("Name")).toHaveAttribute(
+      "aria-invalid",
+      "false",
+    );
+    await expect(writes.tested).toEqual([]);
+
+    // Fixing the field clears its refusal and the message, as after a save.
+    await userEvent.type(topic, "omnibus-kitchen");
+    await waitFor(() => expect(topic).toHaveAttribute("aria-invalid", "false"));
+    await expect(status).toBeEmptyDOMElement();
+  },
+};
+
+export const AResultGoesWhenTheFormChanges: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      http.post(
+        LIST,
+        () =>
+          new HttpResponse("a tag can be at most 64 characters", {
+            status: 422,
+          }),
+      ),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    const dialog = await dialogOf(canvas, "New ntfy connection");
+    const scope = within(dialog);
+    await fillBasics(dialog, userEvent);
+    const status = scope.getByTestId("notify-test-status");
+    await userEvent.click(scope.getByRole("button", { name: TEST_BUTTON }));
+    await waitFor(() =>
+      expect(status).toHaveTextContent("Test notification sent."),
+    );
+
+    await userEvent.type(scope.getByLabelText("Topic"), "-2");
+    await expect(status).toBeEmptyDOMElement();
+
+    await userEvent.click(scope.getByRole("button", { name: SAVE }));
+    await expect(await scope.findByRole("alert")).toHaveTextContent(
+      "Couldn’t save the connection: a tag can be at most 64 characters",
+    );
+    await userEvent.type(scope.getByLabelText("Tags (optional)"), "books");
+    await expect(scope.queryByRole("alert")).not.toBeInTheDocument();
+  },
+};
+
+export const ASaveInFlightCanNotBeCancelled: Story = {
+  beforeEach({ msw }) {
+    const gate = deferred();
+    msw.use(
+      http.post(LIST, async () => {
+        await gate.promise;
+        return new HttpResponse(null, { status: 500 });
+      }),
+    );
+  },
+  play: async ({ args, canvas, userEvent }) => {
+    const dialog = await dialogOf(canvas, "New ntfy connection");
+    const scope = within(dialog);
+    await fillBasics(dialog, userEvent);
+    await userEvent.click(scope.getByRole("button", { name: SAVE }));
+
+    // While it works the button reads "Saving…".
+    await waitFor(() =>
+      expect(scope.getByTestId("notify-save")).toHaveAttribute(
+        "aria-busy",
+        "true",
+      ),
+    );
+    await expect(scope.getByRole("button", { name: "Cancel" })).toBeDisabled();
+    await expect(scope.getByRole("button", { name: "Close" })).toBeDisabled();
+    await userEvent.keyboard("{Escape}");
+    await expect(dialog).toBeInTheDocument();
+    await expect(args.onClose).not.toHaveBeenCalled();
+  },
+};
+
 export const TestInFlight: Story = {
   beforeEach({ msw }) {
     const gate = deferred();

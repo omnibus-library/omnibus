@@ -45,10 +45,36 @@ export const SETTINGS_FIELDS = [
   "tags",
 ] as const satisfies readonly DraftField[];
 
-/** Which secrets the connection being edited holds for the mode it was saved in; none for a new one. */
-export type SavedSecrets = { token: boolean; password: boolean };
+/**
+ * Which secrets the connection being edited holds for the mode it was saved in, and the
+ * address and username they belong to; none for a new one.
+ */
+export type SavedSecrets = {
+  token: boolean;
+  password: boolean;
+  serverUrl: string;
+  username: string;
+};
 
-export const NO_SAVED_SECRETS: SavedSecrets = { token: false, password: false };
+export const NO_SAVED_SECRETS: SavedSecrets = {
+  token: false,
+  password: false,
+  serverUrl: "",
+  username: "",
+};
+
+/** One of the two secrets a connection can hold. */
+export type SecretField = "token" | "password";
+
+/**
+ * Whether a blank secret field keeps the saved secret for the form as it stands:
+ * `kept`, or why it must be typed again; `none` when there is no saved one for this mode.
+ */
+export type SecretState =
+  | "none"
+  | "kept"
+  | "server_url_changed"
+  | "username_changed";
 
 export const NAME_MAX_CHARS = 100;
 
@@ -124,11 +150,58 @@ export function draftOf(connection: NotificationConnection): ConnectionDraft {
 export function savedSecretsOf(
   connection: NotificationConnection,
 ): SavedSecrets {
-  const { auth, token_set, password_set } = connection.settings;
+  const { auth, token_set, password_set, server_url, username } =
+    connection.settings;
   return {
     token: auth === "token" && token_set,
     password: auth === "basic" && password_set,
+    serverUrl: server_url,
+    username: username ?? "",
   };
+}
+
+/**
+ * Whether `secret` may be left blank: the server lends a saved secret only to the address
+ * it was saved for, and a password only to its own username as well.
+ */
+export function secretState(
+  draft: Pick<ConnectionDraft, "auth" | "server_url" | "username">,
+  saved: SavedSecrets,
+  secret: SecretField,
+): SecretState {
+  const held =
+    secret === "token"
+      ? saved.token && draft.auth === "token"
+      : saved.password && draft.auth === "basic";
+  if (!held) return "none";
+  if (draft.server_url.trim() !== saved.serverUrl.trim()) {
+    return "server_url_changed";
+  }
+  if (
+    secret === "password" &&
+    draft.username.trim() !== saved.username.trim()
+  ) {
+    return "username_changed";
+  }
+  return "kept";
+}
+
+const SECRET_NOUNS: Record<SecretField, string> = {
+  token: "token",
+  password: "password",
+};
+
+/** Why a saved secret has to be typed again, as the field's hint says it; null while it is kept or there is none. */
+export function secretRetypeHint(state: SecretState, secret: SecretField) {
+  const noun = SECRET_NOUNS[secret];
+  switch (state) {
+    case "server_url_changed":
+      return `The server URL changed, so enter the ${noun} again.`;
+    case "username_changed":
+      return `The username changed, so enter the ${noun} again.`;
+    default:
+      return null;
+  }
 }
 
 /**
@@ -222,16 +295,24 @@ export function draftProblems(
     problems.topic =
       "A topic is 1 to 64 letters, digits, hyphens or underscores.";
   }
-  if (draft.auth === "token" && draft.token.trim() === "" && !saved.token) {
-    problems.token = "Enter the access token.";
+  if (draft.auth === "token" && draft.token.trim() === "") {
+    const state = secretState(draft, saved, "token");
+    if (state !== "kept") problems.token = missingSecret(state, "token");
   }
   if (draft.auth === "basic") {
     if (draft.username.trim() === "") problems.username = "Enter the username.";
-    if (draft.password === "" && !saved.password) {
-      problems.password = "Enter the password.";
+    const state = secretState(draft, saved, "password");
+    if (draft.password === "" && state !== "kept") {
+      problems.password = missingSecret(state, "password");
     }
   }
   return problems;
+}
+
+function missingSecret(state: SecretState, secret: SecretField): string {
+  const again = secretRetypeHint(state, secret);
+  if (again) return again;
+  return secret === "token" ? "Enter the access token." : "Enter the password.";
 }
 
 /** The form's rules, read into the connection a save sends. */
@@ -267,9 +348,18 @@ export function eventChoices(
 export const isGone = (error: Error) =>
   error instanceof ApiError && error.status === 404;
 
-/** Where a connection posts, as the ntfy apps name a topic: `ntfy.sh/omnibus`. */
+/** Where a connection posts, as the ntfy apps name a topic: `ntfy.sh/omnibus`, whether or not the address ends in a slash. */
 export const postsTo = (settings: NotificationConnection["settings"]) =>
-  `${settings.server_url.replace(/^https?:\/\//, "")}/${settings.topic}`;
+  `${settings.server_url.replace(/^https?:\/\//, "").replace(/\/+$/, "")}/${settings.topic}`;
+
+/** What a row's status line is about: a status is shown only while the connection still reads this way. */
+export const connectionKey = (connection: NotificationConnection) =>
+  JSON.stringify([
+    connection.name,
+    connection.enabled,
+    connection.events,
+    connection.settings,
+  ]);
 
 /** How the last finished notification went, as a row shows it. */
 export type DeliveryLine =
