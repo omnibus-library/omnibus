@@ -878,7 +878,7 @@
           "Admin"
         ],
         "summary": "Create a notification connection",
-        "description": "Saves a new connection. A token or password left out is simply not set. Needs an admin\naccount.",
+        "description": "Saves a new connection. A token or password left out is simply not set, and `enabled`\nleft out saves it switched on. Needs an admin account.",
         "operationId": "create_notification_connection",
         "requestBody": {
           "content": {
@@ -916,7 +916,7 @@
           "Admin"
         ],
         "summary": "Replace a notification connection",
-        "description": "Replaces every field of a saved connection. A token or password left out or null keeps\nthe saved one, and an empty string clears it; switching `auth` drops the old mode's\nsecrets. A saved secret is kept only for the address it was saved for: when\n`server_url` changes, or for a password the `username`, it must be given again. Saving\nit with `enabled` false deletes every notification still waiting to be sent on it, as the\nswitch does. To switch a connection on or off, use `PATCH` on the same path, which\nchanges nothing else. Needs an admin account.",
+        "description": "Replaces every field of a saved connection. A token or password left out or null keeps\nthe saved one, and an empty string clears it; switching `auth` drops the old mode's\nsecrets. A saved secret is kept only for the address it was saved for: when\n`server_url` changes, or for a password the `username`, it must be given again. `enabled`\nleft out keeps the saved value, so a save can't undo a switch flipped meanwhile; saving\nwith `enabled` false deletes every notification still waiting to be sent on it, as the\nswitch does. To switch a connection on or off, use `PATCH` on the same path, which\nchanges nothing else. Needs an admin account.",
         "operationId": "update_notification_connection",
         "parameters": [
           {
@@ -15194,8 +15194,11 @@
         ],
         "properties": {
           "enabled": {
-            "type": "boolean",
-            "description": "Whether the connection sends anything. True when left out."
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Whether the connection sends anything. Null or left out turns a new connection on and\nkeeps a saved one's value, so saving its other fields can't undo a switch flipped\nmeanwhile; `PATCH` is the way to switch one. False, on a save, deletes every\nnotification still waiting to be sent on it."
           },
           "events": {
             "type": "array",

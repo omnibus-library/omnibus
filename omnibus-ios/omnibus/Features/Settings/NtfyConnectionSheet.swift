@@ -302,16 +302,6 @@ struct NtfyConnectionSheet: View {
                     }
                 }
             }
-
-            Plate {
-                toggleRow(
-                    "Turned on",
-                    detail: draft.wrappedValue.enabled
-                        ? "Sends as these things happen."
-                        : "Sends nothing until it is turned back on.",
-                    isOn: draft.enabled, identifier: "ntfy.enabled", isFirst: true
-                )
-            }
         }
     }
 

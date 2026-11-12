@@ -506,7 +506,7 @@ struct NotificationsRaceTests {
         #expect(model.canEdit(saved[0]))
         let toggle = Task { await model.setEnabled(saved[0], false) }
         #expect(await eventually { model.toggling.contains(1) })
-        // The row shows the unconfirmed value; a sheet seeded from it would save it back.
+        // The switch's answer and a save's would race to fill the row.
         let optimistic = try #require(model.connections.first { $0.id == 1 })
         #expect(!optimistic.enabled)
         #expect(!model.canEdit(optimistic))
@@ -517,7 +517,6 @@ struct NotificationsRaceTests {
         let confirmed = try #require(model.connections.first { $0.id == 1 })
         #expect(confirmed.enabled)
         #expect(model.canEdit(confirmed))
-        #expect(try #require(NtfyDraft(editing: confirmed)).enabled)
     }
 
     @Test func aRowThisBuildCantEditNeverOpensItsSheet() async throws {

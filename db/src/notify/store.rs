@@ -1,10 +1,10 @@
 //! Rows of `notification_connections`: the admin routes' create, read, update, switch and
 //! delete, and the list each connection shows with how its last finished notification went.
 //! Every write is checked here first, and an update merges over the saved row in one write
-//! transaction, so a secret left out is kept even when two saves race. The on/off switch
-//! writes its one column alone, so it can't undo a concurrent edit of the rest. Turning a
-//! connection off, by either route, deletes what was still queued for it in the same
-//! transaction, so turning it back on never sends an old notification.
+//! transaction, so a secret or an on/off value left out is kept even when two saves race.
+//! The on/off switch writes its one column alone, so it can't undo a concurrent edit of the
+//! rest. Turning a connection off, by either route, deletes what was still queued for it in
+//! the same transaction, so turning it back on never sends an old notification.
 
 use omnibus_shared::{
     NotificationConnection, NotificationConnectionInput, NotificationEvent,
@@ -35,7 +35,7 @@ pub struct Connection {
     pub settings: ConnectionSettings,
 }
 
-/// A checked input, ready to write.
+/// A checked input, ready to write, its on/off value resolved against the saved row.
 struct Draft {
     name: String,
     enabled: bool,
@@ -44,10 +44,10 @@ struct Draft {
 }
 
 impl Draft {
-    /// Check `input` and merge its settings over `saved`.
+    /// Check `input` and merge it over `saved`; with nothing saved, left-out `enabled` is on.
     fn new(
         input: &NotificationConnectionInput,
-        saved: Option<&ConnectionSettings>,
+        saved: Option<&Connection>,
     ) -> Result<Self, NotifyError> {
         let name = input.name.trim();
         if name.is_empty() || name.chars().count() > NAME_MAX_CHARS {
@@ -63,9 +63,11 @@ impl Draft {
         }
         Ok(Self {
             name: name.to_string(),
-            enabled: input.enabled,
+            enabled: input
+                .enabled
+                .unwrap_or_else(|| saved.is_none_or(|s| s.enabled)),
             events,
-            settings: ConnectionSettings::from_input(&input.settings, saved)?,
+            settings: ConnectionSettings::from_input(&input.settings, saved.map(|s| &s.settings))?,
         })
     }
 
@@ -131,9 +133,9 @@ pub async fn create_connection(
     Ok(wire(id, draft, None))
 }
 
-/// Replace connection `id` with `input`, keeping each saved secret it leaves out; turning
-/// it off deletes what was still queued for it. [`NotifyError::NotFound`] when no
-/// connection has that id.
+/// Replace connection `id` with `input`, keeping each saved secret and the on/off value it
+/// leaves out; an explicit `enabled: false` deletes what was still queued for it.
+/// [`NotifyError::NotFound`] when no connection has that id.
 pub async fn update_connection(
     pool: &SqlitePool,
     id: i64,
@@ -141,7 +143,7 @@ pub async fn update_connection(
 ) -> Result<NotificationConnection, NotifyError> {
     let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     let saved = load(&mut tx, id).await?;
-    let draft = Draft::new(input, Some(&saved.settings))?;
+    let draft = Draft::new(input, Some(&saved))?;
     sqlx::query(&format!(
         "UPDATE notification_connections
             SET name = ?, kind = ?, settings = ?, events = ?, enabled = ?, updated_at = {NOW}
@@ -155,7 +157,7 @@ pub async fn update_connection(
     .bind(id)
     .execute(&mut *tx)
     .await?;
-    if !draft.enabled {
+    if input.enabled == Some(false) {
         drop_queued(&mut tx, id).await?;
     }
     let last = last_delivery(&mut tx, id).await?;

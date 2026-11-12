@@ -826,8 +826,9 @@ function storedSettings(
 }
 
 /**
- * The `/api/admin/notifications` routes over a list of connections: a create adds one, a
- * save replaces one (404 once it is gone), a PATCH turns one on or off and changes nothing
+ * The `/api/admin/notifications` routes over a list of connections: a create adds one (on
+ * unless `enabled` says otherwise), a save replaces one but keeps its on/off value when
+ * `enabled` is left out (404 once it is gone), a PATCH turns one on or off and changes nothing
  * else (422 for any body but `{enabled}`), a delete removes one and a test answers 204.
  * A save or test that leaves a secret out where the server wouldn't lend it answers 422.
  * Secrets are never sent back, only whether one is set. The handler records every write.
@@ -884,7 +885,7 @@ export function notificationHandlers(
         const saved: NotificationConnection = {
           ...was,
           name: input.name.trim(),
-          enabled: input.enabled ?? true,
+          enabled: input.enabled ?? was.enabled,
           events: input.events,
           settings: storedSettings(input.settings, was.settings),
         };

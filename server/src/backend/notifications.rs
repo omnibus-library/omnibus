@@ -51,8 +51,8 @@ pub(super) async fn list_connections(_admin: AdminUser, State(state): State<AppS
 
 /// Create a notification connection
 ///
-/// Saves a new connection. A token or password left out is simply not set. Needs an admin
-/// account.
+/// Saves a new connection. A token or password left out is simply not set, and `enabled`
+/// left out saves it switched on. Needs an admin account.
 #[utoipa::path(
     post,
     path = "/api/admin/notifications/connections",
@@ -81,8 +81,9 @@ pub(super) async fn create_connection(
 /// Replaces every field of a saved connection. A token or password left out or null keeps
 /// the saved one, and an empty string clears it; switching `auth` drops the old mode's
 /// secrets. A saved secret is kept only for the address it was saved for: when
-/// `server_url` changes, or for a password the `username`, it must be given again. Saving
-/// it with `enabled` false deletes every notification still waiting to be sent on it, as the
+/// `server_url` changes, or for a password the `username`, it must be given again. `enabled`
+/// left out keeps the saved value, so a save can't undo a switch flipped meanwhile; saving
+/// with `enabled` false deletes every notification still waiting to be sent on it, as the
 /// switch does. To switch a connection on or off, use `PATCH` on the same path, which
 /// changes nothing else. Needs an admin account.
 #[utoipa::path(

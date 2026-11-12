@@ -22,7 +22,6 @@ enum SavedSecret: Equatable, Sendable {
 
 struct NtfyDraft: Equatable, Sendable {
     var name = ""
-    var enabled = true
     var serverURL = ""
     var topic = ""
     var auth: NtfyAuth = .none
@@ -61,7 +60,6 @@ struct NtfyDraft: Equatable, Sendable {
         savedServerURL = settings.serverURL
         savedUsername = settings.username
         name = connection.name
-        enabled = connection.enabled
         events = connection.events
         serverURL = settings.serverURL
         topic = settings.topic
@@ -164,7 +162,6 @@ struct NtfyDraft: Equatable, Sendable {
     var input: NotificationConnectionInput {
         NotificationConnectionInput(
             name: name.trimmingCharacters(in: .whitespacesAndNewlines),
-            enabled: enabled,
             events: events,
             settings: .ntfy(settings)
         )

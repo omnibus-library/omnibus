@@ -253,7 +253,7 @@ mod drain_due {
         let server = ntfy_answering(ResponseTemplate::new(200)).await;
         let (connection, last) = one_sent_and_one_in_backoff(&pool, &server).await;
         let input = |enabled| omnibus_shared::NotificationConnectionInput {
-            enabled,
+            enabled: Some(enabled),
             ..connection_input("Phone", ntfy_input(&server.uri()))
         };
 

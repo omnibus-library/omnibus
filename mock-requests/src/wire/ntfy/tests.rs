@@ -55,7 +55,7 @@ async fn wire_creates_the_ntfy_connection_when_none_is_saved() {
     let body = body_of(&stub, "POST /api/admin/notifications/connections");
     let saved: NotificationConnectionInput = serde_json::from_value(body).unwrap();
     assert_eq!(saved.name, CONNECTION_NAME);
-    assert!(saved.enabled);
+    assert_eq!(saved.enabled, Some(true));
     assert_eq!(saved.events, [NotificationEvent::RequestNeedsChooser]);
     let ConnectionSettingsInput::Ntfy(ntfy) = &saved.settings;
     assert_eq!(ntfy.server_url, format!("{MOCK}/ntfy"));

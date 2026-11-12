@@ -25,7 +25,6 @@ const DraftFields = z.object({
   tags: z.string(),
   include_details: z.boolean(),
   events: z.array(NotificationEvent),
-  enabled: z.boolean(),
 });
 
 export type ConnectionDraft = z.infer<typeof DraftFields>;
@@ -33,7 +32,7 @@ export type ConnectionDraft = z.infer<typeof DraftFields>;
 /** A form field a refusal can point at. */
 export type DraftField = keyof ConnectionDraft;
 
-/** The fields a test sends; a test needs no name, events or on switch. */
+/** The fields a test sends; a test needs no name or events. */
 export const SETTINGS_FIELDS = [
   "server_url",
   "topic",
@@ -100,7 +99,7 @@ export const EVENT_LABELS: Record<NotificationEvent, string> = {
   request_needs_chooser: "A request needs a version picked",
 };
 
-/** A new connection's form: no sign-in, ntfy's default priority, on, and sent every event the server offers. */
+/** A new connection's form: no sign-in, ntfy's default priority, and sent every event the server offers. */
 export const blankDraft = (
   available: NotificationEvent[],
 ): ConnectionDraft => ({
@@ -115,7 +114,6 @@ export const blankDraft = (
   tags: "",
   include_details: true,
   events: [...available],
-  enabled: true,
 });
 
 /** The tags typed as a comma-separated list, trimmed, blanks dropped. */
@@ -142,7 +140,6 @@ export function draftOf(connection: NotificationConnection): ConnectionDraft {
     tags: tagsText(settings.tags),
     include_details: settings.include_details,
     events: [...connection.events],
-    enabled: connection.enabled,
   };
 }
 
@@ -240,12 +237,14 @@ export function settingsInputOf(
   }
 }
 
-/** The whole connection a save sends. */
+/**
+ * The whole connection a save sends. `enabled` is left out, so a new connection starts on
+ * and a save never undoes the row's switch, which is the only way to turn one off.
+ */
 export const connectionInputOf = (
   draft: ConnectionDraft,
 ): NotificationConnectionInput => ({
   name: draft.name.trim(),
-  enabled: draft.enabled,
   events: draft.events,
   settings: settingsInputOf(draft),
 });
