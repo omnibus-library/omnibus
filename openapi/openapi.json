@@ -9450,7 +9450,7 @@
           "Admin"
         ],
         "summary": "Get the background task feed",
-        "description": "The background tasks running now and those that finished in the last 10 seconds or so,\nfor a progress display to poll. A task one user started, such as a Send to Kindle,\nshows only to that user.",
+        "description": "The background tasks running now and those that finished in the last 10 seconds or so,\nfor a progress display to poll. A task one user started, such as a Send to Kindle,\nshows only to that user. For a non-admin account, a task's `resource_key` is left out,\nand the failure text of a task that isn't theirs is replaced by a generic one, because\nboth can name a folder on the server.",
         "operationId": "get_worker_status",
         "responses": {
           "200": {
@@ -15347,7 +15347,8 @@
             ],
             "properties": {
               "message": {
-                "type": "string"
+                "type": "string",
+                "description": "Why the task failed. For a non-admin it is generic text on any task but their\nown, because the real reason can name a folder on the server."
               },
               "state": {
                 "type": "string",
@@ -18375,7 +18376,7 @@
               "string",
               "null"
             ],
-            "description": "What the task works on, such as a library folder or a book. Tasks with the same\nkey run one after another. Absent when the task claims nothing."
+            "description": "What the task works on, such as a library folder or a book. Tasks with the same\nkey run one after another. Absent when the task claims nothing, and always absent\nfor a non-admin, because the key can be a folder path on the server."
           },
           "started_at_ms": {
             "type": "integer",

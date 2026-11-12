@@ -18,7 +18,9 @@ use super::{internal, AppState};
 ///
 /// The background tasks running now and those that finished in the last 10 seconds or so,
 /// for a progress display to poll. A task one user started, such as a Send to Kindle,
-/// shows only to that user.
+/// shows only to that user. For a non-admin account, a task's `resource_key` is left out,
+/// and the failure text of a task that isn't theirs is replaced by a generic one, because
+/// both can name a folder on the server.
 #[utoipa::path(
     get,
     path = "/api/worker/status",
@@ -31,7 +33,11 @@ pub(super) async fn get_worker_status(
     user: AuthUser,
     State(state): State<AppState>,
 ) -> Json<WorkerStatus> {
-    Json(state.worker.owner_scoped_snapshot(user.id))
+    Json(if user.is_admin {
+        state.worker.owner_scoped_snapshot(user.id)
+    } else {
+        state.worker.reader_snapshot(user.id)
+    })
 }
 
 /// List recent background tasks
