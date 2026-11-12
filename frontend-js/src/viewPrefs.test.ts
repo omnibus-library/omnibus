@@ -102,6 +102,34 @@ describe("loadPrefs", () => {
     ]);
   });
 
+  it("trims stored clauses to the total the API allows, in order", () => {
+    const clause = (field: string) => ({
+      field,
+      mode: "include",
+      values: Array.from({ length: 64 }, (_, i) => `${field}-${i}`),
+    });
+    localStorage.setItem(
+      "omnibus.view_prefs::/books",
+      JSON.stringify({
+        view_mode: "grid",
+        sort_key: "title",
+        sort_dir: "asc",
+        filters: {
+          clauses: ["author", "series", "tag", "genre"].map(clause),
+        },
+      }),
+    );
+
+    const clauses = loadPrefs("/books").clauses;
+
+    expect(clauses.map((c) => [c.field, c.values.length])).toEqual([
+      ["author", 64],
+      ["series", 64],
+      ["tag", 64],
+      ["genre", 8],
+    ]);
+  });
+
   it("leaves out the stored facet values the API would refuse", () => {
     const tooLong = "x".repeat(513);
     localStorage.setItem(

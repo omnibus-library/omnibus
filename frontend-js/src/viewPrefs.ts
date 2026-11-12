@@ -106,11 +106,17 @@ export function loadPrefs(path: string): Prefs {
     budget -= kept.length;
     return kept.length > 0 ? [{ field, mode: "include", values: kept }] : [];
   });
+  // Saved clauses get the same budget, so a filter saved before the total cap still loads.
+  const saved = filters.clauses.flatMap((clause): FilterClause[] => {
+    const values = clause.values.slice(0, Math.min(MAX_FILTER_VALUES, budget));
+    budget -= values.length;
+    return values.length > 0 ? [{ ...clause, values }] : [];
+  });
   return {
     view: stored.view_mode,
     sort: stored.sort_key,
     dir: stored.sort_dir,
-    clauses: [...legacy, ...filters.clauses],
+    clauses: [...legacy, ...saved],
     filtersOpen: stored.filters_open,
   };
 }
