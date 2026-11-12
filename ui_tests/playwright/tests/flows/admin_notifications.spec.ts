@@ -1,6 +1,7 @@
 import { notifications } from "../contracts/notifications";
 import {
   buildNtfyConnection,
+  CLOSED_NTFY_SERVER_TEST_FAILED,
   type NotificationConnection,
   savedWithoutSecrets,
   topicAddress,
@@ -170,9 +171,7 @@ test.describe("notifications section", () => {
     });
 
     await test.step("check the error shows in the form, which stays open", async () => {
-      await expect(modal.testStatus).toHaveText(
-        "Test failed: Couldn't connect to the ntfy server. Check the server URL and that the server is running.",
-      );
+      await expect(modal.testStatus).toHaveText(CLOSED_NTFY_SERVER_TEST_FAILED);
       await expect(modal.dialog).toBeVisible();
       await expect(modal.topicField).toHaveValue(settings.topic);
     });
@@ -198,7 +197,7 @@ test.describe("notifications section", () => {
 
     await test.step("check its row says why the test failed", async () => {
       await expect(section.rowStatus(connection.name)).toHaveText(
-        "Test failed: Couldn't connect to the ntfy server. Check the server URL and that the server is running.",
+        CLOSED_NTFY_SERVER_TEST_FAILED,
       );
       await expect(section.rowLastDelivery(connection.name)).toHaveText(
         "No deliveries yet",

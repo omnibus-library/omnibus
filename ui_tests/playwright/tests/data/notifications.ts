@@ -57,6 +57,10 @@ export interface NotificationConnections {
  */
 export const CLOSED_NTFY_SERVER = "http://127.0.0.1:9";
 
+/** What a test against `CLOSED_NTFY_SERVER` shows: the page's prefix and the server's sentence for a refused connection. */
+export const CLOSED_NTFY_SERVER_TEST_FAILED =
+  "Test failed: Couldn't connect to the ntfy server. Check the server URL and that the server is running.";
+
 /** A public URL no other call returns. */
 export function buildPublicUrl(): string {
   return `https://books-${uniqueDigits()}.example.test`;
