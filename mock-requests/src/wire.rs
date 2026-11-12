@@ -1,11 +1,12 @@
 //! `--local` / `--server`: point a running Omnibus at the mock over its REST API, so a
 //! request can be made without touching Settings. It logs in as the dev seed admin, saves
-//! the mock as the Prowlarr and download client connections, has the server test both, and
-//! logs out. Only a loopback server is ever logged in to (the login carries the seed
-//! password), no redirect is followed, and a connection that is set and not this mock's own
-//! is never overwritten, since the settings read masks secrets and could not restore it.
-//! `--local` also checks that the server on the published port is this checkout's, and
-//! nothing is saved while a server library sits in a checkout's `test_data/` folder.
+//! the mock as the Prowlarr and download client connections and as an ntfy notification
+//! connection ([`ntfy`]), has the server test each, and logs out. Only a loopback server is
+//! ever logged in to (the login carries the seed password), no redirect is followed, and a
+//! connection that is set and not this mock's own is never overwritten, since the settings
+//! read masks secrets and could not restore it. `--local` also checks that the server on
+//! the published port is this checkout's, and nothing is saved while a server library sits
+//! in a checkout's `test_data/` folder.
 
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
@@ -18,6 +19,10 @@ use reqwest::{RequestBuilder, Response, StatusCode};
 use serde::{Deserialize, Serialize};
 
 use crate::{CLIENT_PASSWORD, CLIENT_USERNAME, PROWLARR_API_KEY};
+
+pub mod ntfy;
+
+use ntfy::NtfyWired;
 
 /// The env var holding the dev seed admin's `<user>:<password>`.
 pub const SEED_USER_ENV: &str = "OMNIBUS_DEV_SEED_USER";
@@ -47,6 +52,10 @@ pub enum WireError {
     RequestsOff,
     #[error("the server already points {0} at something that is not this mock: clear it in Settings > Requests first")]
     InUse(String),
+    #[error("the server has a notification connection named \"{0}\" that is not this mock's: rename or delete it first")]
+    NotificationNameTaken(&'static str),
+    #[error("the server has more than one notification connection named \"{0}\" on a fake ntfy: delete all but one")]
+    NotificationNameRepeated(&'static str),
     #[error("{step} failed: {detail}")]
     Server { step: &'static str, detail: String },
 }
@@ -102,16 +111,26 @@ struct LoginReply {
     token: Option<String>,
 }
 
+/// What wiring left on the server besides the request connections, which it either saved or
+/// failed on.
+#[derive(Debug)]
+pub struct Wired {
+    /// The ntfy connection, or why it wasn't saved: a notification problem never stops the
+    /// request wiring, so the mock serves on.
+    pub ntfy: Result<NtfyWired, WireError>,
+}
+
 /// Point the Omnibus at `server` at the mock at `mock_origin`, with `client` as its download
-/// client and `downloads` as the folder both sides read finished files from. Refuses when
-/// the server's library sits in a checkout's `test_data` folder, which an import would write into.
+/// client and `downloads` as the folder both sides read finished files from, then try to
+/// save the mock's ntfy connection. Refuses when the server's library sits in a checkout's
+/// `test_data` folder, which an import would write into.
 pub async fn wire(
     server: &str,
     seed: Option<&str>,
     mock_origin: &str,
     client: DownloadClientKind,
     downloads: &Path,
-) -> Result<(), WireError> {
+) -> Result<Wired, WireError> {
     let server = server.trim_end_matches('/');
     if !is_loopback(server) {
         return Err(WireError::Setup(
@@ -125,7 +144,12 @@ pub async fn wire(
     let http = http()?;
     let token = login(&http, server, username, password).await?;
     let update = update_for(mock_origin, client, downloads);
-    let result = configure(&http, server, &token, &update).await;
+    let result = match configure(&http, server, &token, &update).await {
+        Ok(()) => Ok(Wired {
+            ntfy: ntfy::wire(&http, server, &token, mock_origin).await,
+        }),
+        Err(error) => Err(error),
+    };
     // Ending the session is best effort: an admin session left behind just expires.
     let _ = http
         .post(format!("{server}/api/auth/logout"))
@@ -345,5 +369,7 @@ fn failed(step: &'static str, error: reqwest::Error) -> WireError {
     }
 }
 
+#[cfg(test)]
+mod test_support;
 #[cfg(test)]
 mod tests;

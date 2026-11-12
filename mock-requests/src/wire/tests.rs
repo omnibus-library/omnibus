@@ -1,160 +1,15 @@
 //! The wiring against a stub Omnibus that records what it is sent.
 
-use std::sync::{Arc, Mutex};
-
-use axum::body::Bytes;
-use axum::extract::State;
-use axum::http::{header, HeaderMap, Method, StatusCode, Uri};
-use axum::response::{IntoResponse, Response};
-use axum::{Json, Router};
 use omnibus_shared::RequestsSettingsUpdate;
 use serde_json::{json, Value};
 
+use super::test_support::{
+    body_of, calls, config, run, saved_with, spawn_stub, Config, Stub, MOCK,
+};
 use super::*;
 
-const MOCK: &str = "http://127.0.0.1:7777";
-
-/// What the stub answers.
-struct Config {
-    login: u16,
-    redirect_login: bool,
-    settings: u16,
-    saved: Value,
-    put: u16,
-    /// How many saves answer 500 before `put` applies.
-    put_500s: usize,
-    test_indexer: (u16, &'static str),
-    test_client: (u16, &'static str),
-    repo_root: String,
-    libraries: Value,
-}
-
-struct Stub {
-    config: Config,
-    calls: Mutex<Vec<String>>,
-    bearers: Mutex<Vec<(String, Option<String>)>>,
-    put_body: Mutex<Option<Value>>,
-}
-
-fn nothing_saved() -> Value {
-    json!({
-        "prowlarr_url": null,
-        "prowlarr_api_key_masked": null,
-        "prowlarr_api_key_source": "none",
-        "download_client_kind": "qbittorrent",
-        "download_client_url": null,
-        "download_client_username": null,
-        "download_client_password_masked": null,
-        "download_client_category": "",
-        "download_client_path_prefix": null,
-        "download_path_prefix": null,
-    })
-}
-
-fn saved_with(prowlarr: Option<&str>, client: Option<&str>) -> Value {
-    let mut saved = nothing_saved();
-    saved["prowlarr_url"] = json!(prowlarr);
-    saved["download_client_url"] = json!(client);
-    saved
-}
-
-async fn handle(
-    State(stub): State<Arc<Stub>>,
-    method: Method,
-    uri: Uri,
-    headers: HeaderMap,
-    body: Bytes,
-) -> Response {
-    let route = format!("{method} {}", uri.path());
-    stub.calls.lock().unwrap().push(route.clone());
-    let bearer = headers
-        .get(header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok());
-    stub.bearers
-        .lock()
-        .unwrap()
-        .push((route.clone(), bearer.map(str::to_string)));
-    let c = &stub.config;
-    let status = |code: u16| StatusCode::from_u16(code).unwrap();
-    match route.as_str() {
-        "POST /api/auth/login" if c.redirect_login => (
-            StatusCode::TEMPORARY_REDIRECT,
-            [(header::LOCATION, "/elsewhere")],
-        )
-            .into_response(),
-        "POST /api/auth/login" => (status(c.login), Json(json!({"token": "tok"}))).into_response(),
-        "POST /api/auth/logout" => StatusCode::OK.into_response(),
-        "GET /api/_health" => Json(json!({
-            "app": "omnibus", "status": "ok", "build_id": "1",
-            "repo_root": c.repo_root, "version": "dev", "time": 0,
-        }))
-        .into_response(),
-        "GET /api/settings" => Json(c.libraries.clone()).into_response(),
-        "GET /api/admin/requests/settings" => {
-            (status(c.settings), Json(c.saved.clone())).into_response()
-        }
-        "PUT /api/admin/requests/settings" => {
-            *stub.put_body.lock().unwrap() = serde_json::from_slice(&body).ok();
-            let puts = stub
-                .calls
-                .lock()
-                .unwrap()
-                .iter()
-                .filter(|r| **r == route)
-                .count();
-            let code = if puts <= c.put_500s { 500 } else { c.put };
-            (status(code), "a field is too long").into_response()
-        }
-        "POST /api/admin/requests/settings/test-indexer" => {
-            (status(c.test_indexer.0), c.test_indexer.1).into_response()
-        }
-        "POST /api/admin/requests/settings/test-client" => {
-            (status(c.test_client.0), c.test_client.1).into_response()
-        }
-        _ => StatusCode::NOT_FOUND.into_response(),
-    }
-}
-
-fn config() -> Config {
-    Config {
-        login: 200,
-        redirect_login: false,
-        settings: 200,
-        saved: nothing_saved(),
-        put: 200,
-        put_500s: 0,
-        test_indexer: (200, ""),
-        test_client: (200, ""),
-        repo_root: "/repo".into(),
-        libraries: json!({"ebook_library_path": "/srv/ebooks", "audiobook_library_path": null}),
-    }
-}
-
-async fn spawn_stub(config: Config) -> (String, Arc<Stub>) {
-    let stub = Arc::new(Stub {
-        config,
-        calls: Mutex::default(),
-        bearers: Mutex::default(),
-        put_body: Mutex::default(),
-    });
-    let app = Router::new().fallback(handle).with_state(stub.clone());
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let origin = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
-    tokio::spawn(async move { axum::serve(listener, app).await });
-    (origin, stub)
-}
-
-async fn run(server: &str, kind: DownloadClientKind) -> Result<(), WireError> {
-    let seed = Some("admin:s3cret:with-colon");
-    wire(server, seed, MOCK, kind, Path::new("/dl")).await
-}
-
-fn calls(stub: &Stub) -> Vec<String> {
-    stub.calls.lock().unwrap().clone()
-}
-
 #[tokio::test]
-async fn wire_logs_in_saves_the_mock_tests_both_connections_and_logs_out() {
+async fn wire_logs_in_saves_and_tests_each_connection_then_logs_out() {
     let (origin, stub) = spawn_stub(config()).await;
 
     run(&origin, DownloadClientKind::Transmission)
@@ -170,6 +25,9 @@ async fn wire_logs_in_saves_the_mock_tests_both_connections_and_logs_out() {
             "PUT /api/admin/requests/settings",
             "POST /api/admin/requests/settings/test-indexer",
             "POST /api/admin/requests/settings/test-client",
+            "GET /api/admin/notifications/connections",
+            "POST /api/admin/notifications/connections",
+            "POST /api/admin/notifications/test",
             "POST /api/auth/logout",
         ]
     );
@@ -189,7 +47,7 @@ async fn wire_saves_every_field_the_mock_answers_to() {
 
     run(&origin, DownloadClientKind::Sabnzbd).await.unwrap();
 
-    let body = stub.put_body.lock().unwrap().clone().unwrap();
+    let body = body_of(&stub, "PUT /api/admin/requests/settings");
     let saved: RequestsSettingsUpdate = serde_json::from_value(body).unwrap();
     assert_eq!(saved.prowlarr_url, MOCK);
     assert_eq!(saved.prowlarr_api_key.as_deref(), Some("mock-requests"));

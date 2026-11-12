@@ -69,8 +69,9 @@ kobo *args:
     scripts/with-dev-env.sh default cargo run -q -p omnibus-mock-kobo -- tui "$@"
 
 # Run the fake Prowlarr and download clients (qBittorrent, Transmission, SABnzbd, NZBGet)
-# on one loopback port, so book requests can be made without real services.
-# `--local` points this worktree's dev server at it (run `just dev-up` with
+# and a fake ntfy on one loopback port, so book requests and their notifications can be
+# made without real services. `--local` points this worktree's dev server at it, an ntfy
+# notification connection included (run `just dev-up` with
 # OMNIBUS_BOOK_REQUESTS=1 first) and refuses to replace a connection that is not a
 # previous mock wiring, and refuses to run while a library sits in a checkout's
 # test_data/; `--client` picks which download client (docs/mock-requests.md). Needs `just fixtures` for the

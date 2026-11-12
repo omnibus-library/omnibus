@@ -125,7 +125,7 @@ cargo test -p omnibus-db                           # db + scanner + sync tests
 cargo test -p omnibus-shared                       # shared serde / ebook / progress tests
 cargo test -p omnibus-mcp                          # MCP tool layer (out of default-members)
 cargo test -p omnibus-mock-kobo                    # fake Kobo firmware tests (out of default-members)
-cargo nextest run -p omnibus-mock-requests         # fake Prowlarr / download client tests (out of default-members; nextest, not cargo test)
+cargo nextest run -p omnibus-mock-requests         # fake Prowlarr / download client / ntfy tests (out of default-members; nextest, not cargo test)
 ```
 
 ### Web E2E (Playwright)
@@ -194,7 +194,7 @@ Six-crate Cargo workspace:
 | `server/` | the `omnibus` binary: REST router, Kobo, KOReader, OPDS, the web client at `/` |
 | `mcp/` | MCP tool layer over the `/api/*` surface (out of default-members) |
 | `mock-kobo/` | fake Kobo e-reader that syncs against the Kobo routes (out of default-members) |
-| `mock-requests/` | fake Prowlarr and download clients for book requests (out of default-members; [mock-requests.md](mock-requests.md)) |
+| `mock-requests/` | fake Prowlarr, download clients and ntfy for book requests (out of default-members; [mock-requests.md](mock-requests.md)) |
 
 Alongside it, `frontend-js/` holds the React web client (Vite + pnpm, with its
 own checks: biome, tsc, vitest) and `omnibus-ios/` the native SwiftUI iOS client — an Xcode
