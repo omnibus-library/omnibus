@@ -28,7 +28,7 @@ test.describe("notifications section", () => {
     });
   });
 
-  test("save a public URL that stays after a reload", async ({
+  test("save a public URL, then clear it", async ({
     adminPage,
     scratchPublicUrl,
     expectMutation,
@@ -54,6 +54,23 @@ test.describe("notifications section", () => {
       await adminPage.reload();
       await expect(section.publicUrlField).toHaveValue(scratchPublicUrl);
       await expect(section.publicUrlSource).toHaveText("Saved here");
+    });
+
+    await test.step("clear the saved URL", async () => {
+      await expectMutation(notifications.savePublicUrl(null), () =>
+        section.clearPublicUrl(),
+      );
+      await expect(section.publicUrlField).toHaveValue("");
+    });
+
+    await test.step("reload and find nothing saved here", async () => {
+      await adminPage.reload();
+      await expect(section.publicUrlField).toHaveValue("");
+      // A server started with OMNIBUS_PUBLIC_URL falls back to it; one without has none.
+      await expect(section.publicUrlSource).toHaveText(
+        /^(Not set|Set by the server’s environment \(OMNIBUS_PUBLIC_URL\))$/,
+      );
+      await expect(section.clearPublicUrlButton).toHaveCount(0);
     });
   });
 
@@ -111,12 +128,14 @@ test.describe("notifications section", () => {
         topic: settings.topic,
         token: settings.token ?? "",
       });
-      const { response } = await expectMutation(
-        notifications.create(input),
+      const { request, response } = await expectMutation(
+        notifications.create(),
         () => modal.save(),
       );
+      // Registered before any check, so a failed one still deletes it.
       const created: NotificationConnection = await response.json();
       createdNotificationIds.add(created.id);
+      expect(request.postDataJSON()).toEqual(input);
       expect(created.settings.token_set).toBe(true);
     });
 
@@ -156,6 +175,34 @@ test.describe("notifications section", () => {
       );
       await expect(modal.dialog).toBeVisible();
       await expect(modal.topicField).toHaveValue(settings.topic);
+    });
+  });
+
+  test("test a saved connection from its row", async ({
+    adminPage,
+    expectMutation,
+    ntfyConnection,
+  }) => {
+    const { notifications: section } = adminPage;
+    const connection = await ntfyConnection();
+
+    await test.step("open the notifications section", async () => {
+      await adminPage.goto("notifications");
+    });
+
+    await test.step("test the connection as saved", async () => {
+      await expectMutation(notifications.test(502), () =>
+        section.testRow(connection.name),
+      );
+    });
+
+    await test.step("check its row says why the test failed", async () => {
+      await expect(section.rowStatus(connection.name)).toContainText(
+        "Test failed: could not reach the server",
+      );
+      await expect(section.rowLastDelivery(connection.name)).toHaveText(
+        "No deliveries yet",
+      );
     });
   });
 

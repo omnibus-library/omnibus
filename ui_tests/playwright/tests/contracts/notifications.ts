@@ -20,8 +20,9 @@ export const notifications = {
     status = 200,
   ): ExpectMutationOptions => post(notificationUrls.publicUrl, { url }, status),
 
-  create: (body: NotificationConnectionInput): ExpectMutationOptions =>
-    post(notificationUrls.connections, body, 201),
+  /** A create; the test checks the body itself once it has the new id, so a failed check still cleans up. */
+  create: (): ExpectMutationOptions =>
+    post(notificationUrls.connections, undefined, 201),
 
   /** A save of a whole connection; `body` is checked exactly, so a secret it leaves out must not be sent. */
   update: (body: NotificationConnectionInput): ExpectMutationOptions => ({

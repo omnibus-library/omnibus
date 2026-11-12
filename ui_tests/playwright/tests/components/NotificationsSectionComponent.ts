@@ -7,6 +7,7 @@ export class NotificationsSectionComponent extends BaseComponent {
   readonly publicUrlCard: Locator;
   readonly publicUrlField: Locator;
   readonly savePublicUrlButton: Locator;
+  readonly clearPublicUrlButton: Locator;
   /** Where the URL in effect came from: saved here, the environment, or not set. */
   readonly publicUrlSource: Locator;
   /** The server's reason for refusing a URL, beside the field. */
@@ -25,6 +26,9 @@ export class NotificationsSectionComponent extends BaseComponent {
     this.publicUrlField = this.publicUrlCard.getByLabel("Public server URL");
     this.savePublicUrlButton = this.publicUrlCard.getByRole("button", {
       name: "Save public URL",
+    });
+    this.clearPublicUrlButton = this.publicUrlCard.getByRole("button", {
+      name: "Clear saved URL",
     });
     this.publicUrlSource = page.getByTestId("public-url-status");
     this.publicUrlError = this.publicUrlCard.getByRole("alert");
@@ -53,6 +57,11 @@ export class NotificationsSectionComponent extends BaseComponent {
     });
   }
 
+  /** The result of the last action on `name`'s row, such as its Test. */
+  rowStatus(name: string): Locator {
+    return this.row(name).getByTestId("notification-row-status");
+  }
+
   /** How the last notification to `name` went: "No deliveries yet", "Delivered …", "Failed …". */
   rowLastDelivery(name: string): Locator {
     return this.row(name).getByTestId("notification-last-delivery");
@@ -64,6 +73,17 @@ export class NotificationsSectionComponent extends BaseComponent {
 
   async savePublicUrl(): Promise<void> {
     await this.savePublicUrlButton.click();
+  }
+
+  async clearPublicUrl(): Promise<void> {
+    await this.clearPublicUrlButton.click();
+  }
+
+  /** Sends a test through `name` as saved, from its row. */
+  async testRow(name: string): Promise<void> {
+    await this.row(name)
+      .getByRole("button", { name: `Test ${name}`, exact: true })
+      .click();
   }
 
   async startAdding(): Promise<void> {

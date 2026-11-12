@@ -89,7 +89,10 @@ export function buildNtfyConnection(
 export function topicAddress(
   settings: Pick<NtfySettingsInput, "server_url" | "topic">,
 ): string {
-  return `${settings.server_url.replace(/^https?:\/\//, "")}/${settings.topic}`;
+  const server = settings.server_url
+    .replace(/^https?:\/\//, "")
+    .replace(/\/+$/, "");
+  return `${server}/${settings.topic}`;
 }
 
 /** What a save of `connection` sends with no secret typed: leaving the token out keeps the saved one. */
