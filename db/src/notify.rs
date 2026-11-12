@@ -2,8 +2,9 @@
 //! and the outbox that tells them when something needs a person. An event is queued in the
 //! transaction that causes it, one row per enabled connection subscribed to it; the drain
 //! loop the server spawns renders each row for its provider and sends it, retrying with
-//! backoff. A provider is one [`ConnectionSettings`] variant and one render function in its
-//! own module; events, the outbox and [`deliver`] never name one.
+//! backoff, unless the event no longer needs anyone. A provider is one [`ConnectionSettings`]
+//! variant and one render function in its own module; events, the outbox and [`deliver`]
+//! never name one.
 //!
 //! Delivery is at least once: a crash after a provider accepted a message but before its
 //! row was marked delivered sends that message again.
@@ -13,6 +14,7 @@
 //! save or test one.
 
 mod deliver;
+mod enqueue;
 mod event;
 mod ntfy;
 mod outbox;
@@ -21,11 +23,12 @@ mod settings;
 mod store;
 
 pub use deliver::{deliver, http_client, DeliverError, SEND_TIMEOUT};
+pub use enqueue::enqueue_request_needs_chooser;
 pub use event::{Event, RequestNeedsChooser};
 pub use ntfy::{NtfyCredentials, NtfySettings};
 pub use outbox::{
-    drain_due, drain_tick, enqueue_request_needs_chooser, kick, kicked, next_due, prune_finished,
-    Drained, MAX_ATTEMPTS, RETENTION_SECS,
+    drain_due, drain_tick, kick, kicked, next_due, prune_finished, Drained, MAX_ATTEMPTS,
+    RETENTION_SECS,
 };
 pub use render::{render, render_test, Notice, Outgoing};
 pub use settings::{ConnectionSettings, Secret};

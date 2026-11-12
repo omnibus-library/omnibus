@@ -80,7 +80,9 @@ pub(super) async fn create_connection(
 ///
 /// Replaces every field of a saved connection. A token or password left out or null keeps
 /// the saved one, and an empty string clears it; switching `auth` drops the old mode's
-/// secrets. Needs an admin account.
+/// secrets. A saved secret is kept only for the address it was saved for: when
+/// `server_url` changes, or for a password the `username`, it must be given again. Needs an
+/// admin account.
 #[utoipa::path(
     put,
     path = "/api/admin/notifications/connections/{id}",
@@ -92,7 +94,7 @@ pub(super) async fn create_connection(
         (status = 200, description = "The connection is saved; the body is what is now set.", body = NotificationConnection),
         (status = 403, description = "You aren't an admin."),
         (status = 404, description = "No connection has that id."),
-        (status = 422, description = "A field isn't valid, or the change leaves `token` or `basic` auth without its secret; the body says which. Nothing is saved."),
+        (status = 422, description = "A field isn't valid, or the change leaves `token` or `basic` auth without its secret, such as a saved one left out after `server_url` changed; the body says which. Nothing is saved."),
     ),
 )]
 pub(super) async fn update_connection(
@@ -138,8 +140,10 @@ pub(super) async fn delete_connection(
 ///
 /// Sends a test message with the given settings straight away, without saving them. With
 /// `id`, a token or password the settings leave out is taken from that saved connection, as
-/// saving would; an unsaved connection gives every secret it needs. The message links to
-/// the public server URL when one is set. Needs an admin account.
+/// saving would: only while `server_url`, and for a password the `username`, match the saved
+/// ones, so a saved secret never goes to a new address. An unsaved connection gives every
+/// secret it needs. The message links to the public server URL when one is set. Needs an
+/// admin account.
 #[utoipa::path(
     post,
     path = "/api/admin/notifications/test",
@@ -150,7 +154,7 @@ pub(super) async fn delete_connection(
         (status = 204, description = "The provider accepted the test message."),
         (status = 403, description = "You aren't an admin."),
         (status = 404, description = "`id` names no saved connection."),
-        (status = 422, description = "A setting isn't valid; the body says which."),
+        (status = 422, description = "A setting isn't valid, or a secret is missing, such as a saved one left out for a changed `server_url`; the body says which."),
         (status = 502, description = "The provider couldn't be reached or refused the message; the body carries its answer."),
     ),
 )]

@@ -6,7 +6,6 @@ use omnibus_shared::NotificationEvent;
 use serde_json::json;
 
 use crate::notify::test_support::{deliveries, save_connection};
-use crate::notify::NotifyError;
 use crate::test_support::book_with_png_cover;
 
 use super::*;
@@ -168,20 +167,24 @@ async fn finish_search_queues_once_when_called_twice() {
 }
 
 #[tokio::test]
-async fn finish_search_leaves_the_request_looking_when_queueing_fails() {
+async fn finish_search_still_offers_the_versions_when_queueing_fails() {
     let pool = pool().await;
+    save_connection(&pool, "Phone", URL, true, EVENTS).await;
+    save_connection(&pool, "Tablet", URL, true, EVENTS).await;
     let (id, _) = looking_for_dune(&pool).await;
-    sqlx::query("DROP TABLE notification_deliveries")
-        .execute(&pool)
-        .await
-        .unwrap();
+    // Refuses the second row, after the first went in.
+    sqlx::query(
+        "CREATE TRIGGER refuse_second BEFORE INSERT ON notification_deliveries
+         WHEN (SELECT COUNT(*) FROM notification_deliveries) >= 1
+         BEGIN SELECT RAISE(ABORT, 'refused'); END",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
 
-    let result = finish_search(&pool, id, found()).await;
+    finish_search(&pool, id, found()).await.unwrap();
 
-    assert!(matches!(
-        result,
-        Err(RequestError::Notify(NotifyError::Db(_)))
-    ));
-    assert_eq!(state_of(&pool, id).await.state, RequestState::Looking);
-    assert!(versions(&pool, id).await.unwrap().is_empty());
+    assert_eq!(state_of(&pool, id).await.state, RequestState::Choose);
+    assert_eq!(versions(&pool, id).await.unwrap().len(), 2);
+    assert!(deliveries(&pool).await.is_empty());
 }

@@ -54,10 +54,18 @@ mod checks {
     }
 
     #[test]
-    fn from_input_keeps_a_sub_path_server_url() {
-        let settings = from_input(ntfy_input("http://127.0.0.1:9999/ntfy/"), None).unwrap();
-
-        assert_eq!(ntfy_of(&settings).server_url, "http://127.0.0.1:9999/ntfy");
+    fn from_input_keeps_one_trailing_slash_only_after_a_sub_path_given_with_one() {
+        let shapes = [
+            ("https://host.example/ntfy/", "https://host.example/ntfy/"),
+            ("https://host.example/ntfy//", "https://host.example/ntfy/"),
+            ("https://host.example/ntfy", "https://host.example/ntfy"),
+            ("https://ntfy.sh/", "https://ntfy.sh"),
+            ("https://ntfy.sh", "https://ntfy.sh"),
+        ];
+        for (given, kept) in shapes {
+            let settings = from_input(ntfy_input(given), None).unwrap();
+            assert_eq!(ntfy_of(&settings).server_url, kept, "{given}");
+        }
     }
 
     #[test]
@@ -188,6 +196,59 @@ mod secret_merge {
     }
 
     #[test]
+    fn from_input_asks_for_the_token_again_when_the_server_url_changes() {
+        let saved = saved_token();
+
+        let message = rejection(token_input("https://elsewhere.example", None), Some(&saved));
+
+        assert_eq!(message, "enter the token again: the server URL changed");
+    }
+
+    #[test]
+    fn from_input_counts_an_added_trailing_slash_as_a_changed_server_url() {
+        let saved = stored(token_input("https://host.example/ntfy", Some("tk_saved")));
+
+        let message = rejection(
+            token_input("https://host.example/ntfy/", None),
+            Some(&saved),
+        );
+
+        assert_eq!(message, "enter the token again: the server URL changed");
+    }
+
+    #[test]
+    fn from_input_takes_a_new_token_for_a_changed_server_url() {
+        let saved = saved_token();
+
+        let merged = from_input(
+            token_input("https://elsewhere.example", Some("tk_new")),
+            Some(&saved),
+        )
+        .unwrap();
+
+        assert_eq!(
+            credentials(&merged),
+            &NtfyCredentials::Token {
+                token: Secret::new("tk_new")
+            }
+        );
+    }
+
+    #[test]
+    fn from_input_asks_for_the_password_again_when_the_server_url_or_username_changes() {
+        let saved = saved_basic();
+        let moved = basic_input("https://elsewhere.example", Some("ada"), None);
+        let renamed = basic_input(URL, Some("grace"), None);
+
+        for input in [moved, renamed] {
+            assert_eq!(
+                rejection(input, Some(&saved)),
+                "enter the password again: the server URL or username changed"
+            );
+        }
+    }
+
+    #[test]
     fn from_input_keeps_the_saved_token_when_the_token_is_left_out() {
         let saved = saved_token();
 
@@ -223,12 +284,12 @@ mod secret_merge {
     fn from_input_keeps_the_saved_password_when_the_password_is_left_out() {
         let saved = saved_basic();
 
-        let merged = from_input(basic_input(URL, Some("grace"), None), Some(&saved)).unwrap();
+        let merged = from_input(basic_input(URL, Some("ada"), None), Some(&saved)).unwrap();
 
         assert_eq!(
             credentials(&merged),
             &NtfyCredentials::Basic {
-                username: "grace".to_string(),
+                username: "ada".to_string(),
                 password: Secret::new("saved-pw"),
             }
         );

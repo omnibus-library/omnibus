@@ -76,7 +76,9 @@ impl Draft {
     }
 }
 
-/// Every connection, sorted by name, each with how its last finished notification went.
+/// Every connection, sorted by name, each with how its last finished notification went. A
+/// row that can't be read, such as one a later build saved with a new provider, is left out
+/// and logged by id, so the rest still show.
 pub async fn list_connections(
     pool: &SqlitePool,
 ) -> Result<Vec<NotificationConnection>, NotifyError> {
@@ -89,7 +91,18 @@ pub async fn list_connections(
     ))
     .fetch_all(pool)
     .await?;
-    rows.iter().map(row_to_wire).collect()
+    Ok(rows
+        .iter()
+        .filter_map(|row| {
+            row_to_wire(row)
+                .inspect_err(|_| {
+                    // Never the error: decoding it may quote the settings, secrets and all.
+                    let id = row.try_get::<i64, _>("id").ok();
+                    tracing::warn!(connection = ?id, "left out a notification connection that can't be read");
+                })
+                .ok()
+        })
+        .collect())
 }
 
 /// The connection with this id, secrets included; [`NotifyError::NotFound`] when none has it.

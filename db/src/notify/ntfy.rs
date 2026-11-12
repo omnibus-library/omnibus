@@ -1,7 +1,9 @@
 //! The ntfy provider: its stored settings, how a client's input is checked and merged over
-//! them, and the request that publishes a notice. It publishes JSON to the server's root, so
-//! a title in any script arrives intact and a server under a sub-path takes the same request
-//! at its own address. Reached through [`super::ConnectionSettings`] and [`super::render`].
+//! them, and the request that publishes a notice. It publishes JSON, so a title in any
+//! script arrives intact, to the server URL exactly as saved: a server under a sub-path
+//! takes it at that path, with or without the trailing slash its proxy expects. A saved
+//! secret is reused only for the address it was saved for. Reached through
+//! [`super::ConnectionSettings`] and [`super::render`].
 
 use base64::engine::{general_purpose::STANDARD, Engine as _};
 use omnibus_shared::{NtfyAuth, NtfySettingsInput, NtfySettingsStatus};
@@ -23,7 +25,7 @@ const SECRET_MAX_BYTES: usize = 1024;
 /// An ntfy connection as stored.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NtfySettings {
-    /// The server's normalised address, without a trailing slash.
+    /// The server's normalised address: no trailing slash, unless one followed a sub-path.
     pub server_url: String,
     pub topic: String,
     pub auth: NtfyCredentials,
@@ -49,15 +51,14 @@ impl NtfySettings {
         input: &NtfySettingsInput,
         saved: Option<&NtfySettings>,
     ) -> Result<Self, NotifyError> {
-        let server_url =
-            normalize_base_url(&input.server_url, "server url").map_err(NotifyError::Validation)?;
+        let server_url = valid_server_url(&input.server_url)?;
         if !(1..=5).contains(&input.priority) {
             return Err(invalid("priority must be from 1 to 5"));
         }
         Ok(Self {
+            auth: credentials(input, &server_url, saved)?,
             server_url,
             topic: valid_topic(&input.topic)?,
-            auth: credentials(input, saved.map(|s| &s.auth))?,
             priority: input.priority,
             tags: valid_tags(&input.tags)?,
             include_details: input.include_details,
@@ -125,6 +126,21 @@ fn invalid(reason: &str) -> NotifyError {
     NotifyError::Validation(reason.to_string())
 }
 
+/// The address as [`normalize_base_url`] makes it, but keeping one trailing slash after a
+/// sub-path given with one: a proxy serving ntfy at `location /ntfy/` answers a POST to
+/// `/ntfy` with a redirect, which is never followed. A bare host keeps no slash either way.
+fn valid_server_url(raw: &str) -> Result<String, NotifyError> {
+    let mut url = normalize_base_url(raw, "server url").map_err(NotifyError::Validation)?;
+    // The authority holds no `/`, so one after it starts a path.
+    let has_path = url
+        .split_once("://")
+        .is_some_and(|(_, rest)| rest.contains('/'));
+    if has_path && raw.trim().ends_with('/') {
+        url.push('/');
+    }
+    Ok(url)
+}
+
 /// ntfy's own topic rule: 1 to 64 of `A-Z`, `a-z`, `0-9`, `-` and `_`.
 fn valid_topic(raw: &str) -> Result<String, NotifyError> {
     let topic = raw.trim();
@@ -161,42 +177,63 @@ fn valid_tags(raw: &[String]) -> Result<Vec<String>, NotifyError> {
         .collect()
 }
 
-/// The credentials `input` asks for, keeping each saved secret it leaves out. Switching
-/// mode drops whatever the old mode saved.
+/// The credentials `input` asks for. A secret it leaves out is kept from `saved` only while
+/// it would go where it was saved for: the same server URL, and for basic auth the same
+/// username. Switching mode drops whatever the old mode saved.
 fn credentials(
     input: &NtfySettingsInput,
-    saved: Option<&NtfyCredentials>,
+    server_url: &str,
+    saved: Option<&NtfySettings>,
 ) -> Result<NtfyCredentials, NotifyError> {
+    let same_server = saved.is_some_and(|s| s.server_url == server_url);
     match input.auth {
         NtfyAuth::None => Ok(NtfyCredentials::None),
         NtfyAuth::Token => {
-            let saved = match saved {
+            let saved = match saved.map(|s| &s.auth) {
                 Some(NtfyCredentials::Token { token }) => Some(token),
                 _ => None,
             };
-            let token = merged(input.token.as_deref().map(str::trim), saved)
-                .ok_or_else(|| invalid("a token is required when auth is token"))?;
+            let token = merged(
+                input.token.as_deref().map(str::trim),
+                saved.filter(|_| same_server),
+            )
+            .ok_or_else(|| match (&input.token, saved) {
+                (None, Some(_)) => invalid("enter the token again: the server URL changed"),
+                _ => invalid("a token is required when auth is token"),
+            })?;
             check_secret("token", &token)?;
             Ok(NtfyCredentials::Token { token })
         }
         NtfyAuth::Basic => {
             let username = valid_username(input.username.as_deref())?;
-            let saved = match saved {
-                Some(NtfyCredentials::Basic { password, .. }) => Some(password),
+            let saved = match saved.map(|s| &s.auth) {
+                Some(NtfyCredentials::Basic {
+                    username: saved_username,
+                    password,
+                }) => Some((saved_username, password)),
                 _ => None,
             };
-            let password = merged(input.password.as_deref(), saved)
-                .ok_or_else(|| invalid("a password is required when auth is basic"))?;
+            let same_login = same_server && saved.is_some_and(|(u, _)| *u == username);
+            let password = merged(
+                input.password.as_deref(),
+                saved.map(|(_, p)| p).filter(|_| same_login),
+            )
+            .ok_or_else(|| match (&input.password, saved) {
+                (None, Some(_)) => {
+                    invalid("enter the password again: the server URL or username changed")
+                }
+                _ => invalid("a password is required when auth is basic"),
+            })?;
             check_secret("password", &password)?;
             Ok(NtfyCredentials::Basic { username, password })
         }
     }
 }
 
-/// Left out keeps `saved`, empty clears it, anything else replaces it.
-fn merged(input: Option<&str>, saved: Option<&Secret>) -> Option<Secret> {
+/// Left out keeps `kept`, empty clears it, anything else replaces it.
+fn merged(input: Option<&str>, kept: Option<&Secret>) -> Option<Secret> {
     match input {
-        None => saved.cloned(),
+        None => kept.cloned(),
         Some("") => None,
         Some(value) => Some(Secret::new(value)),
     }

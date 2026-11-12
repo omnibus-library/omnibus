@@ -1,6 +1,7 @@
 //! The outbox drain against a local server: delivered, retried with backoff and not before
-//! it is due, failed at the cap or at once, a turned-off connection, the claim that keeps
-//! two passes from sending twice, a restart, and pruning; then `drain_tick`'s waits.
+//! it is due, failed at the cap or at once, dropped for a turned-off connection or an event
+//! nobody needs now, the claim that keeps two passes from sending twice, a restart, a row
+//! that can't be recorded, and pruning; then `drain_tick`'s waits.
 
 use std::time::Duration;
 
@@ -10,14 +11,17 @@ use crate::auth::now_unix;
 use crate::test_support::{file_db_url, reopen_file_pool, EnvVarGuard};
 
 use super::super::outbox::backoff;
-use super::super::test_support::{deliveries, save_connection, Delivery};
+use super::super::test_support::{
+    chooser_event, deliveries, request_in_choose, save_connection, Delivery,
+};
 use super::*;
 
 const EVENTS: &[NotificationEvent] = &[NotificationEvent::RequestNeedsChooser];
 
-/// Queue the sample event for connection `connection_id`, due now. Returns the row's id.
-async fn queue_sample(pool: &SqlitePool, connection_id: i64) -> i64 {
-    let event = Event::sample();
+/// Queue the event for request `request_id` for connection `connection_id`, due now.
+/// Returns the row's id.
+async fn queue_event(pool: &SqlitePool, connection_id: i64, request_id: i64) -> i64 {
+    let event = chooser_event(request_id);
     sqlx::query_scalar(
         "INSERT INTO notification_deliveries (connection_id, event, payload, state)
          VALUES (?, ?, ?, 'queued') RETURNING id",
@@ -35,11 +39,13 @@ async fn set(pool: &SqlitePool, sql: &str) {
     sqlx::query(sql).execute(pool).await.unwrap();
 }
 
-/// A connection to `server` with one sample notification queued for it.
+/// A connection to `server` with one notification queued for it, of a request still
+/// waiting on a pick. Returns the request's id.
 async fn queued_for(pool: &SqlitePool, server: &MockServer) -> i64 {
     let id = save_connection(pool, "Phone", &server.uri(), true, EVENTS).await;
-    queue_sample(pool, id).await;
-    id
+    let request = request_in_choose(pool, "ada").await;
+    queue_event(pool, id, request).await;
+    request
 }
 
 async fn only(pool: &SqlitePool) -> Delivery {
@@ -172,21 +178,121 @@ mod drain_due {
     }
 
     #[tokio::test]
-    async fn drain_due_fails_without_sending_when_the_connection_was_turned_off() {
+    async fn drain_due_drops_a_notification_quietly_when_the_connection_was_turned_off() {
+        let pool = pool().await;
+        let server = ntfy_answering(ResponseTemplate::new(200)).await;
+        let request = queued_for(&pool, &server).await;
+        drain_due(&pool, &client()).await.unwrap();
+        let before = list_connections(&pool).await.unwrap()[0]
+            .last_delivery
+            .clone();
+        let connection = deliveries(&pool).await[0].connection_id;
+        queue_event(&pool, connection, request).await;
+        set(&pool, "UPDATE notification_connections SET enabled = 0").await;
+
+        let drained = drain_due(&pool, &client()).await.unwrap();
+
+        assert_eq!(drained.dropped, 1);
+        assert_eq!(only(&pool).await.state, "delivered");
+        assert_eq!(server.received_requests().await.unwrap().len(), 1);
+        let after = list_connections(&pool).await.unwrap()[0]
+            .last_delivery
+            .clone();
+        assert!(before.is_some());
+        assert_eq!(after, before);
+    }
+
+    #[tokio::test]
+    async fn drain_due_drops_a_notification_whose_request_no_longer_waits_on_a_pick() {
+        for change in [
+            "UPDATE book_requests SET state = 'chosen'",
+            "UPDATE book_requests SET state = 'cancelled'",
+            "DELETE FROM book_requests",
+        ] {
+            let pool = pool().await;
+            let server = ntfy_answering(ResponseTemplate::new(200)).await;
+            queued_for(&pool, &server).await;
+            set(&pool, change).await;
+
+            let drained = drain_due(&pool, &client()).await.unwrap();
+
+            assert_eq!(drained.dropped, 1, "{change}");
+            assert!(deliveries(&pool).await.is_empty(), "{change}");
+            assert!(
+                server.received_requests().await.unwrap().is_empty(),
+                "{change}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn drain_due_fails_a_row_whose_payload_cannot_be_read() {
         let pool = pool().await;
         let server = ntfy_answering(ResponseTemplate::new(200)).await;
         queued_for(&pool, &server).await;
-        set(&pool, "UPDATE notification_connections SET enabled = 0").await;
+        set(
+            &pool,
+            "UPDATE notification_deliveries SET payload = '{\"not\": \"it\"}'",
+        )
+        .await;
 
-        drain_due(&pool, &client()).await.unwrap();
+        let drained = drain_due(&pool, &client()).await.unwrap();
 
+        assert_eq!(drained.failed, 1);
         let row = only(&pool).await;
         assert_eq!(row.state, "failed");
         assert_eq!(
             row.last_error.as_deref(),
-            Some("not sent: the connection is turned off")
+            Some("the queued notification could not be read")
         );
         assert!(server.received_requests().await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn drain_due_fails_without_sending_a_row_whose_crashed_claims_passed_the_cap() {
+        let pool = pool().await;
+        let server = ntfy_answering(ResponseTemplate::new(200)).await;
+        queued_for(&pool, &server).await;
+        // Every try so far was cut short after its claim, so none was recorded.
+        set(
+            &pool,
+            &format!("UPDATE notification_deliveries SET attempts = {MAX_ATTEMPTS}"),
+        )
+        .await;
+
+        let drained = drain_due(&pool, &client()).await.unwrap();
+
+        assert_eq!(drained.failed, 1);
+        let row = only(&pool).await;
+        assert_eq!(row.state, "failed");
+        assert_eq!(row.attempts, MAX_ATTEMPTS + 1);
+        assert!(server.received_requests().await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn drain_due_goes_on_to_the_next_row_when_one_cannot_be_recorded() {
+        let pool = pool().await;
+        let server = ntfy_answering(ResponseTemplate::new(200)).await;
+        let request = queued_for(&pool, &server).await;
+        let connection = deliveries(&pool).await[0].connection_id;
+        queue_event(&pool, connection, request).await;
+        set(
+            &pool,
+            "CREATE TRIGGER refuse_first BEFORE UPDATE OF state ON notification_deliveries
+             WHEN OLD.id = (SELECT MIN(id) FROM notification_deliveries)
+             BEGIN SELECT RAISE(ABORT, 'refused'); END",
+        )
+        .await;
+
+        let drained = drain_due(&pool, &client()).await.unwrap();
+
+        assert_eq!(drained.delivered, 1);
+        let states: Vec<String> = deliveries(&pool)
+            .await
+            .into_iter()
+            .map(|d| d.state)
+            .collect();
+        assert_eq!(states, ["queued", "delivered"]);
     }
 
     #[tokio::test]
@@ -262,7 +368,7 @@ mod upkeep {
         state: &str,
         finished_at: Option<i64>,
     ) {
-        let id = queue_sample(pool, connection_id).await;
+        let id = queue_event(pool, connection_id, 1).await;
         sqlx::query("UPDATE notification_deliveries SET state = ?, finished_at = ? WHERE id = ?")
             .bind(state)
             .bind(finished_at)
@@ -298,7 +404,7 @@ mod upkeep {
         assert_eq!(next_due(&pool).await.unwrap(), None);
         let id = save_connection(&pool, "Phone", "http://127.0.0.1:9", true, EVENTS).await;
         for at in [500, 200] {
-            let row = queue_sample(&pool, id).await;
+            let row = queue_event(&pool, id, 1).await;
             set(
                 &pool,
                 &format!(
@@ -335,7 +441,7 @@ mod upkeep {
     async fn drain_tick_waits_briefly_when_a_notification_falls_due_soon() {
         let pool = pool().await;
         let id = save_connection(&pool, "Phone", "http://127.0.0.1:9", true, EVENTS).await;
-        let row = queue_sample(&pool, id).await;
+        let row = queue_event(&pool, id, 1).await;
         set(&pool, &format!("UPDATE notification_deliveries SET next_attempt_at = strftime('%s', 'now') + 2 WHERE id = {row}")).await;
 
         let wait = drain_tick(&pool, &client(), &mut None).await;
@@ -383,5 +489,33 @@ mod upkeep {
             prune_finished(&pool, 1).await,
             Err(NotifyError::Db(_))
         ));
+    }
+}
+
+mod still_current {
+    use super::*;
+
+    #[tokio::test]
+    async fn still_current_holds_only_while_the_request_waits_on_a_pick() {
+        let pool = pool().await;
+        let request = request_in_choose(&pool, "ada").await;
+        let event = chooser_event(request);
+
+        let waiting = event.still_current(&pool).await.unwrap();
+        set(&pool, "UPDATE book_requests SET state = 'chosen'").await;
+        let picked = event.still_current(&pool).await.unwrap();
+
+        assert!(waiting);
+        assert!(!picked);
+    }
+
+    #[tokio::test]
+    async fn still_current_propagates_a_db_error_when_the_pool_is_closed() {
+        let pool = pool().await;
+        pool.close().await;
+
+        let result = chooser_event(1).still_current(&pool).await;
+
+        assert!(matches!(result, Err(NotifyError::Db(_))));
     }
 }

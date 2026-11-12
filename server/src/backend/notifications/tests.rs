@@ -357,6 +357,38 @@ mod update_connection {
     }
 
     #[tokio::test]
+    async fn update_connection_answers_422_when_the_server_url_changes_without_the_token() {
+        let (app, _, pool) = fixture().await;
+        let token = admin_token(&pool).await;
+        let saved = ntfy_answering(ResponseTemplate::new(200)).await;
+        let elsewhere = ntfy_answering(ResponseTemplate::new(200)).await;
+        let id = create(
+            &app,
+            &token,
+            connection("Phone", with_token(&saved.uri(), Some(TOKEN))),
+        )
+        .await
+        .id;
+
+        let (status, text) = call(
+            &app,
+            &token,
+            "PUT",
+            &format!("{CONNECTIONS}/{id}"),
+            Some(connection("Phone", with_token(&elsewhere.uri(), None))),
+        )
+        .await;
+        let test = json!({ "id": id, "settings": with_token(&saved.uri(), None) });
+        call(&app, &token, "POST", TEST, Some(test)).await;
+
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(text, "enter the token again: the server URL changed");
+        assert!(elsewhere.received_requests().await.unwrap().is_empty());
+        // Nothing was saved: the token still goes to its own server.
+        assert_eq!(authorizations(&saved).await, [format!("Bearer {TOKEN}")]);
+    }
+
+    #[tokio::test]
     async fn update_connection_answers_422_when_an_empty_token_clears_the_only_one() {
         let (app, _, pool) = fixture().await;
         let token = admin_token(&pool).await;
@@ -497,6 +529,47 @@ mod post_test {
         assert_eq!(status, StatusCode::BAD_GATEWAY);
         assert!(!text.contains(TOKEN), "{text}");
         assert!(text.contains("refused"), "{text}");
+    }
+
+    #[tokio::test]
+    async fn post_test_answers_422_and_sends_nothing_when_a_saved_secret_would_go_elsewhere() {
+        let (app, _, pool) = fixture().await;
+        let token = admin_token(&pool).await;
+        let saved = ntfy_answering(ResponseTemplate::new(200)).await;
+        let elsewhere = ntfy_answering(ResponseTemplate::new(200)).await;
+        let token_id = create(
+            &app,
+            &token,
+            connection("Token", with_token(&saved.uri(), Some(TOKEN))),
+        )
+        .await
+        .id;
+        let basic_id = create(
+            &app,
+            &token,
+            connection("Basic", with_basic(&saved.uri(), Some(PASSWORD))),
+        )
+        .await
+        .id;
+
+        let tests = [
+            (
+                json!({ "id": token_id, "settings": with_token(&elsewhere.uri(), None) }),
+                "enter the token again: the server URL changed",
+            ),
+            (
+                json!({ "id": basic_id, "settings": with_basic(&elsewhere.uri(), None) }),
+                "enter the password again: the server URL or username changed",
+            ),
+        ];
+        for (body, expected) in tests {
+            let (status, text) = call(&app, &token, "POST", TEST, Some(body)).await;
+
+            assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+            assert_eq!(text, expected);
+        }
+        assert!(elsewhere.received_requests().await.unwrap().is_empty());
+        assert!(saved.received_requests().await.unwrap().is_empty());
     }
 
     #[tokio::test]

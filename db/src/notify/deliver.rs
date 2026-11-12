@@ -1,11 +1,10 @@
-//! Sending one rendered request and judging the answer: a 2xx is delivered, a 429, a 5xx or
-//! no answer is worth retrying, anything else never will be. Shared by the outbox and the
+//! Sending one rendered request and judging the answer: a 2xx is delivered; a 408, 425,
+//! 429, 5xx or no answer is worth retrying; anything else never will be. Shared by the outbox and the
 //! test route. Every error message is built from the status and a short, scrubbed piece of
 //! the provider's body, never from the request, so no URL or credential can reach a log
 //! line or a response.
 
 use std::error::Error as _;
-use std::sync::OnceLock;
 use std::time::Duration;
 
 use reqwest::header::RETRY_AFTER;
@@ -28,36 +27,27 @@ const SNIPPET_CHARS: usize = 200;
 /// Why a send didn't deliver.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum DeliverError {
-    /// Worth trying again: no answer, a 429 or a 5xx. `after` is the provider's
+    /// Worth trying again: no answer, a 408, 425, 429 or 5xx. `after` is the provider's
     /// `Retry-After`, when it sent one.
     #[error("{message}")]
     Retry {
         after: Option<Duration>,
         message: String,
     },
-    /// Sending it again won't help: a 4xx other than 429, or a redirect.
+    /// Sending it again won't help: any other 4xx, or a redirect.
     #[error("{message}")]
     Permanent { message: String },
 }
 
-/// The process-wide client for sending notifications, built once and cloned: a
-/// [`SEND_TIMEOUT`] on every call, and no redirect, which could carry a credential to
-/// another host.
+/// A new client for sending notifications: a [`SEND_TIMEOUT`] on every call, and no
+/// redirect, which could carry a credential to another host. The drain loop builds one and
+/// keeps it; a test send builds its own.
 pub fn http_client() -> reqwest::Result<reqwest::Client> {
-    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
-    if let Some(client) = CLIENT.get() {
-        return Ok(client.clone());
-    }
-    let new = reqwest::Client::builder()
+    reqwest::Client::builder()
         .user_agent(default_user_agent())
         .timeout(SEND_TIMEOUT)
         .redirect(reqwest::redirect::Policy::none())
-        .build()?;
-    // A pooled connection dies with the `#[tokio::test]` runtime that opened it.
-    if cfg!(test) {
-        return Ok(new);
-    }
-    Ok(CLIENT.get_or_init(|| new).clone())
+        .build()
 }
 
 /// Send `outgoing` and judge the answer.
@@ -83,7 +73,11 @@ pub async fn deliver(client: &reqwest::Client, outgoing: Outgoing) -> Result<(),
     } else {
         format!("the server answered {status}: {snippet}")
     };
-    if status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error() {
+    let transient = matches!(
+        status,
+        StatusCode::REQUEST_TIMEOUT | StatusCode::TOO_EARLY | StatusCode::TOO_MANY_REQUESTS
+    );
+    if transient || status.is_server_error() {
         Err(DeliverError::Retry { after, message })
     } else {
         Err(DeliverError::Permanent { message })
@@ -120,7 +114,8 @@ fn innermost_cause(e: &reqwest::Error) -> Option<&(dyn std::error::Error + 'stat
     Some(cause)
 }
 
-/// The `Retry-After` seconds a provider sent, capped at [`MAX_RETRY_AFTER`].
+/// The `Retry-After` seconds a provider sent, capped at [`MAX_RETRY_AFTER`]. The HTTP-date
+/// form isn't read, so it falls back to the outbox's own backoff.
 fn retry_after(headers: &reqwest::header::HeaderMap) -> Option<Duration> {
     let seconds: u64 = headers
         .get(RETRY_AFTER)?

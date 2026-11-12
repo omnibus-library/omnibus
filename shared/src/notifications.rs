@@ -61,7 +61,8 @@ pub enum ConnectionSettingsInput {
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct NtfySettingsInput {
     /// The ntfy server's address, such as `https://ntfy.sh`, or `https://example.com/ntfy`
-    /// for one served under a sub-path. It must not carry a login, query or fragment.
+    /// for one served under a sub-path. It must not carry a login, query or fragment. A
+    /// trailing slash after a sub-path is kept, for a proxy that expects one.
     pub server_url: String,
     /// The topic to publish to: 1 to 64 letters, digits, `-` or `_`.
     pub topic: String,
@@ -70,11 +71,12 @@ pub struct NtfySettingsInput {
     #[serde(default)]
     pub username: Option<String>,
     /// The access token, used when `auth` is `token`. Null or left out keeps the saved
-    /// token; an empty string clears it.
+    /// token, but only while `server_url` is unchanged; an empty string clears it.
     #[serde(default)]
     pub token: Option<String>,
     /// The password, used when `auth` is `basic`. Null or left out keeps the saved
-    /// password; an empty string clears it.
+    /// password, but only while `server_url` and `username` are unchanged; an empty string
+    /// clears it.
     #[serde(default)]
     pub password: Option<String>,
     /// The message priority, from 1 (lowest) to 5 (highest). 3, ntfy's default, when left out.
@@ -131,7 +133,7 @@ pub enum ConnectionSettingsStatus {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct NtfySettingsStatus {
-    /// The ntfy server's address, without a trailing slash.
+    /// The ntfy server's address: no trailing slash, unless one was given after a sub-path.
     pub server_url: String,
     pub topic: String,
     pub auth: NtfyAuth,
@@ -203,7 +205,8 @@ pub struct NotificationConnections {
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct NotificationTest {
     /// A saved connection whose token or password fills in one `settings` leaves out, as
-    /// saving would. Null for a connection not saved yet.
+    /// saving would: only while the server URL, and for a password the username, are
+    /// unchanged. Null for a connection not saved yet.
     #[serde(default)]
     pub id: Option<i64>,
     pub settings: ConnectionSettingsInput,

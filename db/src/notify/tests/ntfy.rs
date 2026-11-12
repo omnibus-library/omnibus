@@ -38,14 +38,12 @@ mod request {
     }
 
     #[test]
-    fn render_posts_to_exactly_a_sub_path_server_url() {
-        let outgoing = rendered(
-            ntfy_input("http://127.0.0.1:9999/ntfy/"),
-            &Event::sample(),
-            None,
-        );
+    fn render_posts_to_exactly_a_sub_path_server_url_with_or_without_its_slash() {
+        for url in ["http://127.0.0.1:9999/ntfy/", "http://127.0.0.1:9999/ntfy"] {
+            let outgoing = rendered(ntfy_input(url), &Event::sample(), None);
 
-        assert_eq!(outgoing.url, "http://127.0.0.1:9999/ntfy");
+            assert_eq!(outgoing.url, url);
+        }
     }
 
     #[test]

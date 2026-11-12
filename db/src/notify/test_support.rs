@@ -1,13 +1,17 @@
 //! Fixtures for the notification tests here and in `requests`: ntfy inputs in each sign-in
-//! mode, a saved connection pointed at a test server, and the outbox rows read back whole.
+//! mode, a saved connection pointed at a test server, a request waiting on a pick with its
+//! event, and the outbox rows read back whole.
 
 use omnibus_shared::{
     ConnectionSettingsInput, NotificationConnectionInput, NotificationEvent, NtfyAuth,
-    NtfySettingsInput,
+    NtfySettingsInput, RequestKind,
 };
 use sqlx::{Row, SqlitePool};
 
-use super::{create_connection, ConnectionSettings, NtfySettings};
+use crate::requests::store;
+use crate::test_support::seed_user;
+
+use super::{create_connection, ConnectionSettings, Event, NtfySettings};
 
 /// ntfy settings with no sign-in, publishing to topic `omnibus` on `server_url`.
 pub fn ntfy_input(server_url: &str) -> NtfySettingsInput {
@@ -83,6 +87,29 @@ pub async fn save_connection(
         ..connection_input(name, ntfy_input(server_url))
     };
     create_connection(pool, &input).await.unwrap().id
+}
+
+/// Reader `reader`'s ebook request, waiting on a pick. Returns its id.
+pub async fn request_in_choose(pool: &SqlitePool, reader: &str) -> i64 {
+    let user = seed_user(pool, reader).await;
+    let id = store::start(pool, user, "book-1", RequestKind::Ebook, 5)
+        .await
+        .unwrap()
+        .request
+        .id;
+    sqlx::query("UPDATE book_requests SET state = 'choose' WHERE id = ?")
+        .bind(id)
+        .execute(pool)
+        .await
+        .unwrap();
+    id
+}
+
+/// The sample "needs a chooser" event, for request `request_id`.
+pub fn chooser_event(request_id: i64) -> Event {
+    let Event::RequestNeedsChooser(mut event) = Event::sample();
+    event.request_id = request_id;
+    Event::RequestNeedsChooser(event)
 }
 
 /// One outbox row as stored.

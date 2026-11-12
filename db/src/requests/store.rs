@@ -48,9 +48,6 @@ pub enum RequestError {
     /// Making the book from a provider's record failed.
     #[error(transparent)]
     Scan(#[from] crate::scan::ScanError),
-    /// Queueing the notifications a change causes failed.
-    #[error(transparent)]
-    Notify(#[from] notify::NotifyError),
 }
 
 /// One request as stored. `stuck_detail` is the plain-words reason it is stuck, for whoever may see the request.
@@ -341,7 +338,7 @@ pub async fn versions(
 /// restarted, picked or answered meanwhile keeps its state. Versions given up earlier stay
 /// in the table and are not offered again; a search that finds nothing else ends `not_found`.
 /// A request that reaches `choose` for a reader who may not pick queues its notifications
-/// in the same transaction.
+/// in the same transaction; a failure to queue them never holds the request back.
 pub async fn finish_search(
     pool: &SqlitePool,
     id: i64,
@@ -388,7 +385,7 @@ pub async fn finish_search(
         for r in ranked {
             insert_result(&mut tx, id, r).await?;
         }
-        queued = notify::enqueue_request_needs_chooser(&mut tx, id, book.as_ref()).await?;
+        queued = notify::enqueue_request_needs_chooser(&mut tx, id, book.as_ref()).await;
     }
     tx.commit().await?;
     if queued > 0 {

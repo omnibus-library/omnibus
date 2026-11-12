@@ -81,18 +81,28 @@ async fn deliver_succeeds_when_the_server_answers_200() {
 }
 
 #[tokio::test]
-async fn deliver_posts_to_a_sub_path_without_doubling_a_slash() {
-    let server = ntfy_answering(ResponseTemplate::new(200)).await;
+async fn deliver_posts_to_a_sub_path_as_given_with_or_without_its_slash() {
+    for sub_path in ["/ntfy/", "/ntfy"] {
+        let server = ntfy_answering(ResponseTemplate::new(200)).await;
 
-    let result = send_to(
-        &format!("{}/ntfy/", server.uri()),
-        ntfy_input("http://unused"),
-    )
-    .await;
+        let url = format!("{}{sub_path}", server.uri());
+        let result = send_to(&url, ntfy_input("http://unused")).await;
 
-    assert_eq!(result, Ok(()));
-    let received = server.received_requests().await.unwrap();
-    assert_eq!(received[0].url.path(), "/ntfy");
+        assert_eq!(result, Ok(()));
+        let received = server.received_requests().await.unwrap();
+        assert_eq!(received[0].url.path(), sub_path);
+    }
+}
+
+#[tokio::test]
+async fn deliver_retries_a_408_and_a_425() {
+    for status in [408, 425] {
+        let (_, message) = retry(answer(ResponseTemplate::new(status)).await);
+        assert!(
+            message.starts_with(&format!("the server answered {status}")),
+            "{message}"
+        );
+    }
 }
 
 #[tokio::test]

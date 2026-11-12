@@ -916,7 +916,7 @@
           "Admin"
         ],
         "summary": "Replace a notification connection",
-        "description": "Replaces every field of a saved connection. A token or password left out or null keeps\nthe saved one, and an empty string clears it; switching `auth` drops the old mode's\nsecrets. Needs an admin account.",
+        "description": "Replaces every field of a saved connection. A token or password left out or null keeps\nthe saved one, and an empty string clears it; switching `auth` drops the old mode's\nsecrets. A saved secret is kept only for the address it was saved for: when\n`server_url` changes, or for a password the `username`, it must be given again. Needs an\nadmin account.",
         "operationId": "update_notification_connection",
         "parameters": [
           {
@@ -958,7 +958,7 @@
             "description": "No connection has that id."
           },
           "422": {
-            "description": "A field isn't valid, or the change leaves `token` or `basic` auth without its secret; the body says which. Nothing is saved."
+            "description": "A field isn't valid, or the change leaves `token` or `basic` auth without its secret, such as a saved one left out after `server_url` changed; the body says which. Nothing is saved."
           }
         }
       },
@@ -1000,7 +1000,7 @@
           "Admin"
         ],
         "summary": "Send a test notification",
-        "description": "Sends a test message with the given settings straight away, without saving them. With\n`id`, a token or password the settings leave out is taken from that saved connection, as\nsaving would; an unsaved connection gives every secret it needs. The message links to\nthe public server URL when one is set. Needs an admin account.",
+        "description": "Sends a test message with the given settings straight away, without saving them. With\n`id`, a token or password the settings leave out is taken from that saved connection, as\nsaving would: only while `server_url`, and for a password the `username`, match the saved\nones, so a saved secret never goes to a new address. An unsaved connection gives every\nsecret it needs. The message links to the public server URL when one is set. Needs an\nadmin account.",
         "operationId": "test_notification_connection",
         "requestBody": {
           "content": {
@@ -1023,7 +1023,7 @@
             "description": "`id` names no saved connection."
           },
           "422": {
-            "description": "A setting isn't valid; the body says which."
+            "description": "A setting isn't valid, or a secret is missing, such as a saved one left out for a changed `server_url`; the body says which."
           },
           "502": {
             "description": "The provider couldn't be reached or refused the message; the body carries its answer."
@@ -15217,7 +15217,7 @@
               "null"
             ],
             "format": "int64",
-            "description": "A saved connection whose token or password fills in one `settings` leaves out, as\nsaving would. Null for a connection not saved yet."
+            "description": "A saved connection whose token or password fills in one `settings` leaves out, as\nsaving would: only while the server URL, and for a password the username, are\nunchanged. Null for a connection not saved yet."
           },
           "settings": {
             "$ref": "#/components/schemas/ConnectionSettingsInput"
@@ -15254,7 +15254,7 @@
               "string",
               "null"
             ],
-            "description": "The password, used when `auth` is `basic`. Null or left out keeps the saved\npassword; an empty string clears it."
+            "description": "The password, used when `auth` is `basic`. Null or left out keeps the saved\npassword, but only while `server_url` and `username` are unchanged; an empty string\nclears it."
           },
           "priority": {
             "type": "integer",
@@ -15266,7 +15266,7 @@
           },
           "server_url": {
             "type": "string",
-            "description": "The ntfy server's address, such as `https://ntfy.sh`, or `https://example.com/ntfy`\nfor one served under a sub-path. It must not carry a login, query or fragment."
+            "description": "The ntfy server's address, such as `https://ntfy.sh`, or `https://example.com/ntfy`\nfor one served under a sub-path. It must not carry a login, query or fragment. A\ntrailing slash after a sub-path is kept, for a proxy that expects one."
           },
           "tags": {
             "type": "array",
@@ -15280,7 +15280,7 @@
               "string",
               "null"
             ],
-            "description": "The access token, used when `auth` is `token`. Null or left out keeps the saved\ntoken; an empty string clears it."
+            "description": "The access token, used when `auth` is `token`. Null or left out keeps the saved\ntoken, but only while `server_url` is unchanged; an empty string clears it."
           },
           "topic": {
             "type": "string",
@@ -15328,7 +15328,7 @@
           },
           "server_url": {
             "type": "string",
-            "description": "The ntfy server's address, without a trailing slash."
+            "description": "The ntfy server's address: no trailing slash, unless one was given after a sub-path."
           },
           "tags": {
             "type": "array",

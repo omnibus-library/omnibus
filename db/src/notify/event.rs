@@ -1,12 +1,15 @@
-//! The events a connection can be sent, each with the payload queued for it and the words
-//! it is told in. The payload is captured when the event happens, so a message says what
-//! was true then; only the link is built at send time, from the public URL in effect. Every
-//! provider renders the same [`Notice`], so the wording lives here once.
+//! The events a connection can be sent, each with the payload queued for it, the words it
+//! is told in, and whether it still needs anyone. The payload is captured when the event
+//! happens, so a message says what was true then; the link is built at send time, from the
+//! public URL in effect. Every provider renders the same [`Notice`], and the outbox asks the
+//! event itself whether it is still current, so neither names an event.
 
 use omnibus_shared::{NotificationEvent, RequestKind};
 use serde::{Deserialize, Serialize};
+use sqlx::SqlitePool;
 
 use super::render::Notice;
+use super::NotifyError;
 
 /// Something that happened that a connection may be told about.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -65,6 +68,19 @@ impl Event {
                     format!("{url}/requests?book={}", urlencoding::encode(&e.book_uuid))
                 }),
             },
+        }
+    }
+
+    /// Whether the event still needs anyone: a request still waiting on a pick. One picked,
+    /// cancelled, restarted or deleted since is not worth a message.
+    pub async fn still_current(&self, pool: &SqlitePool) -> Result<bool, NotifyError> {
+        match self {
+            Self::RequestNeedsChooser(e) => Ok(sqlx::query_scalar(
+                "SELECT EXISTS (SELECT 1 FROM book_requests WHERE id = ? AND state = 'choose')",
+            )
+            .bind(e.request_id)
+            .fetch_one(pool)
+            .await?),
         }
     }
 

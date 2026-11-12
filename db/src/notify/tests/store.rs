@@ -311,16 +311,40 @@ mod list_connections {
     }
 
     #[tokio::test]
-    async fn list_connections_reports_unreadable_settings_without_quoting_them() {
+    async fn list_connections_leaves_out_a_row_it_cannot_read() {
+        let pool = pool().await;
+        let kept = save_connection(&pool, "Kept", URL, true, EVENTS).await;
+        for (name, settings) in [
+            ("Later build", r#"{"kind":"pigeon","loft":"north"}"#),
+            ("Hand edit", r#"{"kind":"ntfy","token":"tk_secret""#),
+        ] {
+            let id = save_connection(&pool, name, URL, true, EVENTS).await;
+            sqlx::query("UPDATE notification_connections SET settings = ? WHERE id = ?")
+                .bind(settings)
+                .bind(id)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+
+        let listed = list_connections(&pool).await.unwrap();
+
+        let ids: Vec<i64> = listed.iter().map(|c| c.id).collect();
+        assert_eq!(ids, [kept]);
+    }
+
+    #[tokio::test]
+    async fn get_connection_reports_unreadable_settings_without_quoting_them() {
         let pool = pool().await;
         let id = save_connection(&pool, "Phone", URL, true, EVENTS).await;
-        sqlx::query("UPDATE notification_connections SET settings = '{\"kind\":\"ntfy\",\"token\":\"tk_secret\"' WHERE id = ?")
+        sqlx::query("UPDATE notification_connections SET settings = ? WHERE id = ?")
+            .bind(r#"{"kind":"ntfy","token":"tk_secret""#)
             .bind(id)
             .execute(&pool)
             .await
             .unwrap();
 
-        let error = list_connections(&pool).await.unwrap_err();
+        let error = get_connection(&pool, id).await.unwrap_err();
 
         assert!(matches!(error, NotifyError::Db(_)));
         assert!(!error.to_string().contains("tk_secret"), "{error}");
