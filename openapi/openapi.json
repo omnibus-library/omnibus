@@ -13045,7 +13045,8 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "The configured library folder, for an admin. Anyone else gets a short key derived\nfrom it: the same folder always gives the same key, so a client can scope what it\nsaves per library, but it names no folder. Null when no folder is set."
           },
           "total": {
             "type": [

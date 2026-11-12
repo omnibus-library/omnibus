@@ -25,7 +25,7 @@ pub(super) mod chapters;
 pub(super) mod images;
 mod query;
 use self::query::{decode_page_cursor, parse_formats, request_filters};
-use super::{internal, with_pagination_headers, AppState};
+use super::{internal, library_path_for, with_pagination_headers, AppState};
 use crate::auth::{AuthUser, MediaAuthUser};
 use crate::http_errors::invalid_filter;
 
@@ -79,25 +79,25 @@ pub(super) async fn get_ebooks(
         && q.filter.is_none()
         && q.exclude_formats.is_none()
     {
-        return respond_full_library(&state, ebook.as_deref(), audiobook.as_deref()).await;
+        return respond_full_library(&state, &user, ebook.as_deref(), audiobook.as_deref()).await;
     }
 
-    let viewer = db::Viewer {
-        user_id: user.id,
-        is_admin: user.is_admin,
-    };
-    respond_keyset_page(&state, &q, viewer, ebook.as_deref(), audiobook.as_deref()).await
+    respond_keyset_page(&state, &user, &q, ebook.as_deref(), audiobook.as_deref()).await
 }
 
 /// Full (capped) combined library, with `X-Total-Count` / `X-Total-Cap`
 /// headers — the unpaginated response shape for clients that send no cursor.
 async fn respond_full_library(
     state: &AppState,
+    user: &AuthUser,
     ebook: Option<&str>,
     audiobook: Option<&str>,
 ) -> Response {
     match db::library_from_db_with_total_combined(&state.pool, ebook, audiobook).await {
-        Ok((library, total)) => with_pagination_headers(Json(library).into_response(), total),
+        Ok((mut library, total)) => {
+            library.path = library_path_for(library.path.take(), user);
+            with_pagination_headers(Json(library).into_response(), total)
+        }
         Err(error) => internal("read books", error),
     }
 }
@@ -158,8 +158,8 @@ fn keyset_page_response(
 /// than a silently mis-positioned page or a 500.
 async fn respond_keyset_page(
     state: &AppState,
+    user: &AuthUser,
     q: &EbooksQuery,
-    viewer: db::Viewer,
     ebook: Option<&str>,
     audiobook: Option<&str>,
 ) -> Response {
@@ -171,7 +171,11 @@ async fn respond_keyset_page(
         Ok(f) => f,
         Err(reason) => return invalid_filter(&reason),
     };
-    let path = ebook.or(audiobook).map(str::to_string);
+    let viewer = db::Viewer {
+        user_id: user.id,
+        is_admin: user.is_admin,
+    };
+    let path = library_path_for(ebook.or(audiobook).map(str::to_string), user);
     let paths = db::collect_paths(ebook, audiobook);
     let exclude = omnibus_shared::sanitize_exclude_formats(
         q.exclude_formats

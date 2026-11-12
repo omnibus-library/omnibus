@@ -77,6 +77,29 @@ pub(crate) async fn set_library_paths(
         .expect("set_settings should persist the paths");
 }
 
+/// `GET uri` as an admin or a reader with `folder` set as the ebook library: the raw body and
+/// the `EbookLibrary` it parses to.
+pub(crate) async fn library_listing_for(
+    uri: &str,
+    admin: bool,
+    folder: &str,
+) -> (String, omnibus_shared::EbookLibrary) {
+    let (app, _, pool) = fixture().await;
+    set_library_paths(&pool, Some(folder), None).await;
+    let token = if admin {
+        admin_token(&pool).await
+    } else {
+        reader_token(&pool).await
+    };
+    let res = tower::ServiceExt::oneshot(app, get_with_bearer(uri, &token))
+        .await
+        .expect("request should succeed");
+    assert_eq!(res.status(), StatusCode::OK);
+    let body = body_text(res).await;
+    let library = serde_json::from_str(&body).expect("the listing should parse");
+    (body, library)
+}
+
 /// Asserts the calling test runs on tokio's current-thread flavor, the invariant every
 /// `*DirGuard` in this module (and `EnvGuard` in `auth::boot::tests`) relies on to hold
 /// its lock across `.await`. Call it first in a guard's constructor so a switch to a

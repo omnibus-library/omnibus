@@ -421,6 +421,23 @@ fn rest_openapi() -> utoipa::openapi::OpenApi {
     .into_openapi()
 }
 
+/// The `path` of an `EbookLibrary` as `user` may see it: the real folder for an admin, and for
+/// anyone else a short key derived from it, which still tells libraries apart (a client scopes
+/// its saved view by it) without naming a folder on the server.
+fn library_path_for(path: Option<String>, user: &AuthUser) -> Option<String> {
+    use sha2::{Digest, Sha256};
+    if user.is_admin {
+        return path;
+    }
+    path.map(|p| {
+        Sha256::digest(p.as_bytes())
+            .iter()
+            .take(8)
+            .map(|byte| format!("{byte:02x}"))
+            .collect()
+    })
+}
+
 /// Attach the pagination hint headers to a list/search response: `X-Total-Count` is
 /// the true row count before the `MAX_BOOKS_RETURNED` cap, and `X-Total-Cap` is the
 /// cap, set only when the response was truncated. The JSON body shape is unchanged,

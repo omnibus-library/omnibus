@@ -121,8 +121,7 @@ async fn api_get_ebooks_returns_empty_library_for_configured_path_without_index(
     )
     .await
     .expect("set should succeed");
-    let user = auth_test_support::create_user(&pool, "alice").await;
-    let token = auth_test_support::bearer_token(&pool, user.id).await;
+    let token = admin_token(&pool).await;
     let app = crate::backend::rest_router(AppState::new(pool));
 
     let response = app
@@ -304,4 +303,30 @@ async fn api_ebooks_returns_401_when_anonymous() {
     let (app, _, _) = fixture().await;
     let res = app.oneshot(get_anon("/api/ebooks")).await.unwrap();
     assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+}
+
+const FOLDER: &str = "/does/not/exist/omnibus_ebook_test";
+
+/// The full library and a keyset page, the two shapes `GET /api/ebooks` answers in.
+const EBOOK_LISTINGS: [&str; 2] = ["/api/ebooks", "/api/ebooks?limit=1"];
+
+#[tokio::test]
+async fn api_get_ebooks_hides_the_folder_path_from_a_reader_behind_a_stable_key() {
+    for uri in EBOOK_LISTINGS {
+        let (body, first) = library_listing_for(uri, false, FOLDER).await;
+        let (_, second) = library_listing_for(uri, false, FOLDER).await;
+
+        assert!(!body.contains("/does/not/exist"), "{uri}: {body}");
+        assert!(first.path.is_some(), "{uri} keeps a key to scope prefs by");
+        assert_eq!(first.path, second.path, "{uri}: the key must be stable");
+    }
+}
+
+#[tokio::test]
+async fn api_get_ebooks_shows_the_folder_path_to_an_admin() {
+    for uri in EBOOK_LISTINGS {
+        let (_, library) = library_listing_for(uri, true, FOLDER).await;
+
+        assert_eq!(library.path.as_deref(), Some(FOLDER), "{uri}");
+    }
 }
