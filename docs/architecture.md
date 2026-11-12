@@ -43,13 +43,15 @@ Cargo workspace with six crates:
   same API. Dev tooling only — it ships in neither the server binary nor the
   Docker image — and it depends on no `omnibus-*` crate, so its wire types can
   catch a server-side shape change that a shared DTO would hide.
-- **`mock-requests/`** (`omnibus-mock-requests`) — a **fake Prowlarr and fake
-  download clients** (qBittorrent, Transmission, SABnzbd, NZBGet) on one loopback
-  port, so a book request can run from search to Ready without real services.
+- **`mock-requests/`** (`omnibus-mock-requests`) — a **fake Prowlarr, fake
+  download clients** (qBittorrent, Transmission, SABnzbd, NZBGet) **and a fake
+  ntfy** on one loopback port, so a book request can run from search to Ready, and
+  its notification be read, without real services.
   Searches are answered from the query, a download's progress is worked out when a
   client reads it, and a finished download copies a file from `test_data/` into a
   folder the server imports from. A `/_mock` control API steers search and download
-  outcomes; `just mock-requests --local` points a dev server at it. Dev tooling
+  outcomes, lists what the fake ntfy received and makes its publishes fail;
+  `just mock-requests --local` points a dev server at it. Dev tooling
   only. Unlike `mock-kobo` it depends on `omnibus-db` and `omnibus-shared` on
   purpose: the fakes are tested through the server's own clients, which are the
   contract. See [mock-requests.md](mock-requests.md).

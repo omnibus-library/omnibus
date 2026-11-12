@@ -9,7 +9,7 @@ pub const RUNTIME_DIR: &str = ".claude/runtime";
 
 /// The text `--help` prints.
 pub const USAGE: &str = "\
-mock-requests: a fake Prowlarr and fake download clients for Omnibus book requests
+mock-requests: a fake Prowlarr, fake download clients and a fake ntfy for Omnibus book requests
 
 USAGE:
     mock-requests [--port <n>] [--downloads <dir>] [--test-data <dir>] [--download-secs <n>]
@@ -21,13 +21,15 @@ OPTIONS:
                           [default: .claude/runtime/mock-requests/downloads]
     --test-data <dir>     where the ebook and audiobook payloads are  [default: test_data]
     --download-secs <n>   seconds a download takes to finish  [default: 30]
-    --local               point this worktree's dev server at the mock (needs `just dev-up`)
-    --server <origin>     point the loopback Omnibus at <origin> at the mock
+    --local               point this worktree's dev server at the mock, its ntfy connection
+                          included (needs `just dev-up`)
+    --server <origin>     point the loopback Omnibus at <origin> at the mock, the same way
     --client <kind>       the client to wire: qbittorrent, transmission, sabnzbd or nzbget
                           [default: qbittorrent; needs --local or --server]
     -h, --help            print this text
 
-Steer it while it runs through /_mock (docs/mock-requests.md).
+Steer it while it runs through /_mock; read what the fake ntfy received at /_mock/ntfy
+(docs/mock-requests.md).
 ";
 
 /// What the command line asks for.

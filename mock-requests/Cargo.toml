@@ -1,8 +1,8 @@
 # Fake Prowlarr and download clients (qBittorrent, Transmission, SABnzbd, NZBGet)
-# for the book-request pipeline. Dev tooling only, out of default-members like
-# `mock-kobo/`. Unlike mock-kobo it depends on `omnibus-db` and `omnibus-shared` on
-# purpose: the server's own clients are the contract the fakes are tested against,
-# and the wiring body is the shared settings type itself.
+# for the book-request pipeline, and a fake ntfy for its notifications. Dev tooling
+# only, out of default-members like `mock-kobo/`. Unlike mock-kobo it depends on
+# `omnibus-db` and `omnibus-shared` on purpose: the server's own clients are the
+# contract the fakes are tested against, and the wiring bodies are the shared types.
 
 [package]
 name = "omnibus-mock-requests"
@@ -29,7 +29,11 @@ thiserror = { workspace = true }
 tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "sync", "time"] }
 
 [dev-dependencies]
-omnibus-db = { path = "../db" }
+# `test-support` seeds the reader whose request queues a notification for the outbox test.
+omnibus-db = { path = "../db", features = ["test-support"] }
 # The tests call the control API and upload NZBs directly.
 reqwest = { workspace = true, features = ["query", "multipart"] }
 tempfile = { workspace = true }
+# Reads back the outbox row a drain left, which `omnibus-db` exports no reader for. The
+# version `db/` uses and a subset of its features, so cargo unifies on one build.
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "sqlite"] }

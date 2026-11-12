@@ -8,6 +8,8 @@ use anyhow::Context;
 
 use omnibus_mock_requests::catalogue::Payloads;
 use omnibus_mock_requests::cli::{self, Command, Target, RUNTIME_DIR};
+use omnibus_mock_requests::ntfy::PATH as NTFY_PATH;
+use omnibus_mock_requests::wire::ntfy::CONNECTION_NAME;
 use omnibus_mock_requests::wire::{self, SEED_USER_ENV};
 use omnibus_mock_requests::{router, Mock};
 
@@ -52,8 +54,14 @@ async fn main() -> anyhow::Result<()> {
             Target::Server(origin) => origin.clone(),
         };
         let seed = std::env::var(SEED_USER_ENV).ok();
-        wire::wire(&omnibus, seed.as_deref(), &origin, args.client, &downloads).await?;
+        let ntfy = wire::wire(&omnibus, seed.as_deref(), &origin, args.client, &downloads).await?;
+        let saved = if ntfy.created { "created" } else { "updated" };
         eprintln!("wired {omnibus} to the mock ({})", args.client.as_str());
+        eprintln!(
+            "wired {omnibus}'s ntfy connection \"{CONNECTION_NAME}\" (id {}, {saved}) to \
+             {origin}{NTFY_PATH}; read what it sends at {origin}/_mock/ntfy",
+            ntfy.id
+        );
     }
     println!(
         "MOCK_REQUESTS_READY port={port} downloads={} pid={}",
