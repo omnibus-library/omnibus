@@ -176,10 +176,11 @@ notification and sends it within seconds; it shows in `/_mock/ntfy` with the boo
 `/requests?book=<uuid>`. An admin's own requests, or those of a reader who may pick,
 send nothing.
 
-What the server does with a forced failure, and what an admin sees. The server never
-shows the mock's status line or JSON body: the connection's last delivery and a test
-send's failure carry a plain sentence, and the raw status and a scrubbed piece of the
-body go only to the server's log, as a `WARN` line.
+What the server does with a forced failure, and what an admin sees. The connection's
+last delivery and a test send's failure carry a plain sentence, which may name the
+HTTP code (`(HTTP 500)`) but never quotes the mock's status line or its JSON body;
+those, the body scrubbed and cut short, are only in the server's log, on a `WARN`
+line.
 
 | Forced | The server | Sentence shown |
 |---|---|---|
@@ -191,16 +192,21 @@ body go only to the server's log, as a `WARN` line.
 - **Retries** come 30 seconds after the first try, doubling up to an hour, or after
   the `Retry-After` when that is longer: about five hours in all, as the twelfth
   failed try gives up. The fake sends `Retry-After` as seconds; the server also reads
-  a date. Each try shows in `/_mock/ntfy` with its status, and the queued row keeps
-  the sentence as its last error.
+  a date. Each try shows in `/_mock/ntfy` with its status. While a notification
+  waits for its next try no screen shows it: the last delivery is the most recent
+  *finished* one, and the waiting row's sentence is only in the database
+  (`notification_deliveries.last_error`).
 - **Giving up** fails the notification, and the connection's last delivery shows the
   sentence: under Administration › Notifications on the web, You › Server settings ›
   Notifications on iOS, and in `GET /api/admin/notifications/connections`.
-- A notification still waiting for a retry is dropped unsent, and leaves no failed
-  last delivery, when its connection is turned off or its request is picked,
-  cancelled or restarted meanwhile. Turn the `Mock ntfy` connection off with its
-  switch, or with `PATCH /api/admin/notifications/connections/{id}` and
-  `{"enabled": false}`, which changes nothing else.
+- **Turning the connection off** deletes every notification still queued for it, in
+  the same save, so a pending retry is never sent and leaves no failed last delivery.
+  Use the `Mock ntfy` connection's switch, or
+  `PATCH /api/admin/notifications/connections/{id}` with `{"enabled": false}`, which
+  changes nothing else; a full `PUT` with `"enabled": false` does the same. A
+  notification still waiting is also dropped unsent, at its next try, once its
+  request is picked, cancelled or restarted, and a request that reaches Choose a
+  version again replaces its own waiting notification rather than adding another.
 - A test send, wiring's own included, answers with the same sentence at once (the web
   shows it after `Test failed: `) and never changes the last delivery.
 

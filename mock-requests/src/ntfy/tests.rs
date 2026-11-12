@@ -35,6 +35,17 @@ async fn post(mock: &Running, path: &str, body: &str) -> reqwest::Response {
         .unwrap()
 }
 
+/// `POST` `body` to the fake's `/ntfy` with `authorization` as the header, if any.
+async fn post_as(mock: &Running, authorization: Option<&str>, body: &str) -> reqwest::Response {
+    let mut request = reqwest::Client::new()
+        .post(format!("{}/ntfy", mock.origin))
+        .body(body.to_string());
+    if let Some(value) = authorization {
+        request = request.header("authorization", value);
+    }
+    request.send().await.unwrap()
+}
+
 /// The first publish the fake kept.
 async fn first(mock: &Running) -> Value {
     ntfy_record(mock).await["messages"][0].clone()
@@ -133,6 +144,32 @@ async fn publish_refuses_a_wrong_sign_in_with_a_401_the_server_does_not_retry() 
         assert_eq!(
             got["topic"], "omnibus",
             "{scheme}: the refusal keeps what was sent"
+        );
+    }
+}
+
+#[tokio::test]
+async fn publish_answers_ntfys_own_401_and_403_bodies_for_a_wrong_or_missing_sign_in() {
+    let unauthorized = json!({"code": 40101, "http": 401, "error": "unauthorized"});
+    let forbidden = json!({"code": 40301, "http": 403, "error": "forbidden"});
+    // `mock:wrong`, the fake clients' username with the wrong password.
+    let wrong_basic = "Basic bW9jazp3cm9uZw==";
+    let cases = [
+        (Some("Bearer tk_wrong"), 401, &unauthorized),
+        (Some(wrong_basic), 401, &unauthorized),
+        (Some("Digest x"), 401, &unauthorized),
+        (None, 403, &forbidden),
+    ];
+    for (authorization, status, body) in cases {
+        let mock = spawn().await;
+
+        let reply = post_as(&mock, authorization, r#"{"topic": "omnibus"}"#).await;
+
+        assert_eq!(reply.status(), status, "{authorization:?}");
+        assert_eq!(
+            &reply.json::<Value>().await.unwrap(),
+            body,
+            "{authorization:?}"
         );
     }
 }
@@ -386,7 +423,7 @@ async fn drain_due_fails_a_notification_the_fake_refuses_with_a_401_and_shows_wh
 }
 
 #[tokio::test]
-async fn drain_due_drops_a_pending_retry_unsent_once_the_connection_is_turned_off() {
+async fn set_connection_enabled_drops_a_pending_retry_before_it_is_ever_sent() {
     let mock = spawn().await;
     control(
         &mock,
@@ -396,25 +433,15 @@ async fn drain_due_drops_a_pending_retry_unsent_once_the_connection_is_turned_of
     .await;
     let (pool, id) = queued(&mock).await;
     drain(&pool).await;
+    assert_eq!(outbox(&pool).await.len(), 1, "the 500 left a retry queued");
+
     notify::set_connection_enabled(&pool, id, false)
         .await
         .unwrap();
-    // The retry is due in 30 seconds; bring it forward.
-    sqlx::query("UPDATE notification_deliveries SET next_attempt_at = 0")
-        .execute(&pool)
-        .await
-        .unwrap();
 
-    let drained = drain(&pool).await;
-
-    assert_eq!(drained.dropped, 1);
     assert!(outbox(&pool).await.is_empty());
+    assert_eq!(drain(&pool).await, Drained::default());
     assert!(last_delivery(&pool, id).await.is_none());
-    assert_eq!(
-        ntfy_record(&mock).await["messages"]
-            .as_array()
-            .unwrap()
-            .len(),
-        1
-    );
+    let messages = ntfy_record(&mock).await["messages"].clone();
+    assert_eq!(messages.as_array().unwrap().len(), 1, "{messages}");
 }

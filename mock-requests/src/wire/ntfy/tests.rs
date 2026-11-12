@@ -3,6 +3,7 @@
 use omnibus_shared::{DownloadClientKind, NotificationConnectionInput};
 use serde_json::{json, Value};
 
+use crate::test_support::SAYS_SIGN_IN_REFUSED;
 use crate::wire::test_support::{
     body_of, calls, config, ntfy_connection, run, spawn_stub, Config, CREATED_ID, MOCK,
 };
@@ -205,14 +206,9 @@ async fn wire_reports_the_ntfy_step_a_server_refused_without_failing_the_request
         ),
         (|c| c.ntfy_save = 422, "save the ntfy connection", "422"),
         (
-            |c| {
-                c.ntfy_test = (
-                    502,
-                    "ntfy refused the sign-in. Check the access token, or the username and password.",
-                )
-            },
+            |c| c.ntfy_test = (502, SAYS_SIGN_IN_REFUSED),
             "test-ntfy",
-            "ntfy refused the sign-in.",
+            SAYS_SIGN_IN_REFUSED,
         ),
     ];
     for (tweak, step, says) in steps {
