@@ -16,6 +16,7 @@
 mod deliver;
 mod enqueue;
 mod event;
+mod explain;
 mod ntfy;
 mod outbox;
 mod render;

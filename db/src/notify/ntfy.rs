@@ -16,6 +16,9 @@ use super::render::{Notice, Outgoing};
 use super::settings::Secret;
 use super::NotifyError;
 
+/// The provider's name in the messages an admin reads.
+const LABEL: &str = "ntfy";
+
 const TOPIC_MAX_CHARS: usize = 64;
 const MAX_TAGS: usize = 10;
 const TAG_MAX_CHARS: usize = 64;
@@ -114,6 +117,7 @@ pub(super) fn render(settings: &NtfySettings, notice: &Notice) -> Outgoing {
         }
     }
     Outgoing {
+        provider: LABEL,
         method: reqwest::Method::POST,
         url: settings.server_url.clone(),
         headers,

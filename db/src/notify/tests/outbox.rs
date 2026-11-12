@@ -121,7 +121,10 @@ mod drain_due {
         let row = only(&pool).await;
         assert_eq!(row.state, "queued");
         assert_eq!(row.attempts, 1);
-        assert!(row.last_error.as_deref().unwrap().contains("500"));
+        assert_eq!(
+            row.last_error.as_deref(),
+            Some("The ntfy server had a problem and couldn't take the message (HTTP 500).")
+        );
         assert!(row.next_attempt_at >= before + 30, "{row:?}");
         assert!(row.next_attempt_at <= now_unix() + 30, "{row:?}");
     }
@@ -160,7 +163,10 @@ mod drain_due {
         assert_eq!(row.state, "failed");
         assert_eq!(row.attempts, MAX_ATTEMPTS);
         assert!(row.finished_at.is_some());
-        assert!(row.last_error.unwrap().contains("503"));
+        assert_eq!(
+            row.last_error.as_deref(),
+            Some("The ntfy server had a problem and couldn't take the message (HTTP 503).")
+        );
     }
 
     #[tokio::test]
@@ -174,7 +180,10 @@ mod drain_due {
         let row = only(&pool).await;
         assert_eq!(row.state, "failed");
         assert_eq!(row.attempts, 1);
-        assert!(row.last_error.unwrap().contains("401"));
+        assert_eq!(
+            row.last_error.as_deref(),
+            Some("ntfy refused the sign-in. Check the access token, or the username and password.")
+        );
     }
 
     #[tokio::test]

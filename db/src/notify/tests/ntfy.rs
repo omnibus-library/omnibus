@@ -31,6 +31,7 @@ mod request {
     fn render_posts_json_with_the_topic_to_the_server_url() {
         let outgoing = rendered(ntfy_input(URL), &Event::sample(), None);
 
+        assert_eq!(outgoing.provider, "ntfy");
         assert_eq!(outgoing.method, reqwest::Method::POST);
         assert_eq!(outgoing.url, URL);
         assert_eq!(outgoing.header("content-type"), Some("application/json"));

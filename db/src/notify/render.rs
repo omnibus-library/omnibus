@@ -31,6 +31,8 @@ impl Notice {
 /// One HTTP request to a provider, ready to send.
 #[derive(Clone)]
 pub struct Outgoing {
+    /// The provider's name as an admin-facing message says it, such as `ntfy`.
+    pub provider: &'static str,
     pub method: reqwest::Method,
     pub url: String,
     pub headers: Vec<(&'static str, String)>,
@@ -55,6 +57,7 @@ impl fmt::Debug for Outgoing {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let names: Vec<&str> = self.headers.iter().map(|(name, _)| *name).collect();
         f.debug_struct("Outgoing")
+            .field("provider", &self.provider)
             .field("method", &self.method)
             .field("headers", &names)
             .field("body_len", &self.body.len())

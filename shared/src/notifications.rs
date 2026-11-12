@@ -183,7 +183,8 @@ pub struct NotificationLastDelivery {
     pub at: i64,
     /// True when the provider accepted it; false when it was given up on.
     pub ok: bool,
-    /// Why it was given up on, such as the provider's answer. Null when `ok`.
+    /// A plain sentence saying why it was given up on, such as that the provider refused the
+    /// sign-in, to show as it is. Null when `ok`.
     pub error: Option<String>,
 }
 

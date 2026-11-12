@@ -187,7 +187,7 @@ pub(super) async fn delete_connection(
         (status = 403, description = "You aren't an admin."),
         (status = 404, description = "`id` names no saved connection."),
         (status = 422, description = "A setting isn't valid, or a secret is missing, such as a saved one left out for a changed `server_url`; the body says which."),
-        (status = 502, description = "The provider couldn't be reached or refused the message; the body carries its answer."),
+        (status = 502, description = "The provider couldn't be reached or refused the message. The body is a plain sentence saying which, such as that the provider refused the sign-in, to show as it is; it never quotes the provider's answer."),
     ),
 )]
 pub(super) async fn post_test(
@@ -214,8 +214,8 @@ pub(super) async fn post_test(
         Ok(client) => client,
         Err(e) => return internal("build the notification client", e),
     };
-    // A `DeliverError` is built without the request and scrubbed of its secrets, so its
-    // text is safe to send back.
+    // A `DeliverError`'s text is a fixed sentence, never the request or the provider's body,
+    // so it is safe to send back.
     match notify::deliver(
         &client,
         notify::render_test(&settings, public_url.as_deref()),

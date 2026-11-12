@@ -174,6 +174,11 @@ urlencoding = "2"
 # re-export and which give each rejection its own message. Already in
 # Cargo.lock via reqwest, so no new download.
 url = "2"
+# A failed notification send is told apart as a TLS failure by finding a
+# `rustls::Error` in reqwest's error chain (`notify::deliver`); its types are
+# the only reliable signal. The same 0.23 reqwest's `rustls` feature already
+# builds, so no new download, and no features of its own.
+rustls = { version = "0.23", default-features = false }
 
 # F5.9 library cleanup (#962): regex-based detectors — junk-author tooling
 # artifacts, book-title cruft prefixes/suffixes. Already present in

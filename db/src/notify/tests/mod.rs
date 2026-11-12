@@ -1,6 +1,6 @@
 //! Tests for notification connections, by topic: the settings merge, ntfy's rendering,
-//! delivery against a local server, the outbox and the connection store. The fixtures they
-//! share are here and in `notify::test_support`.
+//! delivery against a local server, the sentences a failed send is told in, the outbox and
+//! the connection store. The fixtures they share are here and in `notify::test_support`.
 
 use sqlx::SqlitePool;
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -8,6 +8,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 use super::*;
 
 mod deliver;
+mod explain;
 mod ntfy;
 mod outbox;
 mod settings;

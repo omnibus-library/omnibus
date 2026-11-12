@@ -1077,7 +1077,7 @@
             "description": "A setting isn't valid, or a secret is missing, such as a saved one left out for a changed `server_url`; the body says which."
           },
           "502": {
-            "description": "The provider couldn't be reached or refused the message; the body carries its answer."
+            "description": "The provider couldn't be reached or refused the message. The body is a plain sentence saying which, such as that the provider refused the sign-in, to show as it is; it never quotes the provider's answer."
           }
         }
       }
@@ -15261,7 +15261,7 @@
               "string",
               "null"
             ],
-            "description": "Why it was given up on, such as the provider's answer. Null when `ok`."
+            "description": "A plain sentence saying why it was given up on, such as that the provider refused the\nsign-in, to show as it is. Null when `ok`."
           },
           "ok": {
             "type": "boolean",

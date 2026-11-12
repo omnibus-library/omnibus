@@ -570,22 +570,44 @@ mod post_test {
     }
 
     #[tokio::test]
-    async fn post_test_answers_502_with_the_providers_refusal() {
-        for (code, words) in [(401, "unauthorized"), (500, "disk full")] {
+    async fn post_test_answers_502_with_a_sentence_for_the_providers_refusal() {
+        let cases = [
+            (
+                401,
+                "ntfy refused the sign-in. Check the access token, or the username and password.",
+            ),
+            (
+                500,
+                "The ntfy server had a problem and couldn't take the message (HTTP 500).",
+            ),
+        ];
+        for (code, sentence) in cases {
             let (app, _, pool) = fixture().await;
             let token = admin_token(&pool).await;
-            let server = ntfy_answering(ResponseTemplate::new(code).set_body_string(words)).await;
+            let server =
+                ntfy_answering(ResponseTemplate::new(code).set_body_string("disk full")).await;
             let body = json!({ "settings": ntfy(&server.uri()) });
 
             let (status, text) = call(&app, &token, "POST", TEST, Some(body)).await;
 
             assert_eq!(status, StatusCode::BAD_GATEWAY);
-            assert!(
-                text.starts_with(&format!("the server answered {code}")),
-                "{text}"
-            );
-            assert!(text.ends_with(words), "{text}");
+            assert_eq!(text, sentence);
         }
+    }
+
+    #[tokio::test]
+    async fn post_test_answers_502_with_a_sentence_when_nothing_listens() {
+        let (app, _, pool) = fixture().await;
+        let token = admin_token(&pool).await;
+        let body = json!({ "settings": ntfy(&omnibus_db::test_support::closed_port_url()) });
+
+        let (status, text) = call(&app, &token, "POST", TEST, Some(body)).await;
+
+        assert_eq!(status, StatusCode::BAD_GATEWAY);
+        assert_eq!(
+            text,
+            "Couldn't connect to the ntfy server. Check the server URL and that the server is running."
+        );
     }
 
     #[tokio::test]
@@ -610,7 +632,10 @@ mod post_test {
 
         assert_eq!(status, StatusCode::BAD_GATEWAY);
         assert!(!text.contains(TOKEN), "{text}");
-        assert!(text.contains("refused"), "{text}");
+        assert_eq!(
+            text,
+            "ntfy didn't let this sign-in post to the topic. Check that the token or account can write to it."
+        );
     }
 
     #[tokio::test]

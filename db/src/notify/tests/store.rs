@@ -318,7 +318,14 @@ mod list_connections {
         let phone = save_connection(&pool, "phone", URL, true, EVENTS).await;
         let attic = save_connection(&pool, "Attic", URL, true, EVENTS).await;
         finished(&pool, phone, "delivered", 100, None).await;
-        finished(&pool, phone, "failed", 200, Some("the server answered 401")).await;
+        finished(
+            &pool,
+            phone,
+            "failed",
+            200,
+            Some("ntfy refused the sign-in."),
+        )
+        .await;
         sqlx::query(
             "INSERT INTO notification_deliveries (connection_id, event, payload, state)
              VALUES (?, 'request_needs_chooser', '{}', 'queued')",
@@ -336,7 +343,7 @@ mod list_connections {
         let last = listed[1].last_delivery.clone().unwrap();
         assert_eq!(last.at, 200);
         assert!(!last.ok);
-        assert_eq!(last.error.as_deref(), Some("the server answered 401"));
+        assert_eq!(last.error.as_deref(), Some("ntfy refused the sign-in."));
     }
 
     #[tokio::test]
