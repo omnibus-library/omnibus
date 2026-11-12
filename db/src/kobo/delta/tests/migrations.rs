@@ -8,6 +8,10 @@ use super::*;
 /// Migration `0100`'s resend, read from the migration itself so the two cannot drift.
 const KOBO_RESEND: &str = include_str!("../../../../migrations/0100_kobo_resend_metadata.sql");
 
+/// Migration `0120`'s watermark shift, read from the migration itself like [`KOBO_RESEND`].
+const STATE_WATERMARK_SHIFT: &str =
+    include_str!("../../../../migrations/0120_kobo_state_watermark_shift.sql");
+
 /// Migration `0103`'s backfill, read from the migration itself like [`KOBO_RESEND`].
 const POSITION_MARKS_READING: &str =
     include_str!("../../../../migrations/0103_position_marks_reading.sql");
@@ -94,5 +98,53 @@ async fn position_marks_reading_migration_reannounces_a_backfilled_book_to_a_dev
     let delta = sync_once(&pool, user, device).await;
     assert_eq!(delta.len(), 1);
     assert!(matches!(&delta.changes[0], SyncChange::StateChanged(b) if b.uuid == dune));
+    assert!(sync_delta(&pool, user, device).await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn state_watermark_migration_reannounces_a_state_stuck_at_the_old_clock_watermark() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = make_user(&pool, "reader").await;
+    let device = make_device(&pool, user, "Clara").await;
+    let stuck = seed_synced_ebook(&pool, "dune.epub", "Dune", "Herbert").await;
+    let older = seed_synced_ebook(&pool, "emma.epub", "Emma", "Austen").await;
+    synced_shelf(&pool, user, "Kobo", &[stuck.clone(), older.clone()]).await;
+    sync_once(&pool, user, device).await;
+    // What the clock-time watermark left: the device synced after both states were saved, and
+    // `stuck`'s state shares the second of that sync, so it was never announced.
+    let at = server_now(&pool).await - 10;
+    place_position(&pool, user, &stuck, 40, at).await;
+    place_position(&pool, user, &older, 40, at - 50).await;
+    sqlx::query("UPDATE kobo_books_sync SET synced_at = ? WHERE device_id = ?")
+        .bind(at)
+        .bind(device)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(sync_delta(&pool, user, device).await.unwrap().is_empty());
+    let held_before: Vec<(String, i64, bool)> = sqlx::query_as(
+        "SELECT book_uuid, last_modified_seen, resend FROM kobo_books_sync ORDER BY book_uuid",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+
+    sqlx::raw_sql(STATE_WATERMARK_SHIFT)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let delta = sync_delta(&pool, user, device).await.unwrap();
+    assert_eq!(delta.len(), 1, "got {:?}", delta.changes);
+    assert!(matches!(&delta.changes[0], SyncChange::StateChanged(b) if b.uuid == stuck));
+    // No book is sent again, and the announced state settles once recorded.
+    let held_after: Vec<(String, i64, bool)> = sqlx::query_as(
+        "SELECT book_uuid, last_modified_seen, resend FROM kobo_books_sync ORDER BY book_uuid",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(held_after, held_before);
+    sync_once(&pool, user, device).await;
     assert!(sync_delta(&pool, user, device).await.unwrap().is_empty());
 }
