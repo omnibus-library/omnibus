@@ -34,8 +34,8 @@ pub use keys::{
     set_hardcover_api_key,
 };
 pub use public_url::{
-    effective_public_url, get_public_url, normalize_public_url, public_url_status,
-    seed_public_url_from_env, set_public_url,
+    effective_public_url, get_public_url, normalize_base_url, normalize_public_url,
+    public_url_status, seed_public_url_from_env, set_public_url,
 };
 pub use requests::{
     effective_requests_config, is_plain_http_url, requests_settings_status, set_requests_settings,

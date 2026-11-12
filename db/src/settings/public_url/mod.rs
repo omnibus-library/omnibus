@@ -27,6 +27,13 @@ const PUBLIC_URL_ENV: &str = "OMNIBUS_PUBLIC_URL";
 /// but an absolute `http(s)` URL with a host and no userinfo, query or fragment
 /// with [`SettingsError::Validation`]; the message never echoes the value.
 pub fn normalize_public_url(raw: &str) -> Result<String, SettingsError> {
+    normalize_base_url(raw, "public url").map_err(SettingsError::Validation)
+}
+
+/// [`normalize_public_url`]'s rules for any server address an admin saves, such
+/// as a notification server's; the refusal names the address as `label`.
+pub fn normalize_base_url(raw: &str, label: &str) -> Result<String, String> {
+    let invalid = |reason: &str| format!("{label} {reason}");
     let raw = raw.trim();
     if raw.len() > PUBLIC_URL_MAX_LEN {
         return Err(invalid(&format!("exceeds {PUBLIC_URL_MAX_LEN} bytes")));
@@ -60,10 +67,6 @@ pub fn normalize_public_url(raw: &str) -> Result<String, SettingsError> {
         return Err(invalid(&format!("exceeds {PUBLIC_URL_MAX_LEN} bytes")));
     }
     Ok(normalized.to_string())
-}
-
-fn invalid(reason: &str) -> SettingsError {
-    SettingsError::Validation(format!("public url {reason}"))
 }
 
 /// Read the saved public URL, or `None` when unset/blank. Ignores the env var.

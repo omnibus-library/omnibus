@@ -10,6 +10,7 @@ mod change;
 mod handoff;
 mod list;
 mod new_book;
+mod notify;
 
 const MAX_LIVE: i64 = 5;
 

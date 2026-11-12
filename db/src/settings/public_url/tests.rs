@@ -1,7 +1,8 @@
 //! Unit tests for the `public_url` settings row: `normalize_public_url`'s
-//! accepted shapes and each rejection, the get/set pair, and the
-//! settings → `OMNIBUS_PUBLIC_URL` resolution, with the env var pinned via
-//! `EnvVarGuard`, and the gate that keeps an invalid env var to one warning.
+//! accepted shapes and each rejection, `normalize_base_url`'s label, the
+//! get/set pair, the settings → `OMNIBUS_PUBLIC_URL` resolution, with the
+//! env var pinned via `EnvVarGuard`, and the gate that keeps an invalid env
+//! var to one warning.
 
 use crate::pool::init_db;
 use crate::test_support::EnvVarGuard;
@@ -142,6 +143,24 @@ fn normalize_public_url_rejects_a_url_that_percent_encoding_grows_past_the_cap()
 fn normalize_public_url_returns_an_already_normalised_url_unchanged() {
     let once = normalize_public_url("https://books.example.com/caf é/").unwrap();
     assert_eq!(normalize_public_url(&once).unwrap(), once);
+}
+
+#[test]
+fn normalize_base_url_keeps_a_sub_path_and_drops_the_trailing_slash() {
+    assert_eq!(
+        normalize_base_url("http://127.0.0.1:9999/ntfy/", "server url").unwrap(),
+        "http://127.0.0.1:9999/ntfy"
+    );
+}
+
+#[test]
+fn normalize_base_url_names_the_address_by_its_label_when_it_refuses_one() {
+    let message = normalize_base_url("ntfy.example.com", "server url").unwrap_err();
+
+    assert!(
+        message.starts_with("server url must be an absolute URL"),
+        "{message}"
+    );
 }
 
 #[tokio::test]
