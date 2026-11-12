@@ -212,6 +212,67 @@ mod update_connection {
     }
 }
 
+mod set_connection_enabled {
+    use super::*;
+
+    /// Every column the switch must leave alone, as stored.
+    async fn untouched_columns(pool: &SqlitePool, id: i64) -> (String, String, String, String) {
+        sqlx::query_as(
+            "SELECT name, kind, settings, events FROM notification_connections WHERE id = ?",
+        )
+        .bind(id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+    }
+
+    async fn updated_at(pool: &SqlitePool, id: i64) -> i64 {
+        sqlx::query_scalar("SELECT updated_at FROM notification_connections WHERE id = ?")
+            .bind(id)
+            .fetch_one(pool)
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn set_connection_enabled_changes_only_the_switch_and_its_time() {
+        let pool = pool().await;
+        let input = connection_input("Phone", token_input(URL, Some("tk_secret")));
+        let id = create_connection(&pool, &input).await.unwrap().id;
+        finished(&pool, id, "delivered", 100, None).await;
+        sqlx::query("UPDATE notification_connections SET updated_at = 0")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let before = untouched_columns(&pool, id).await;
+
+        let off = set_connection_enabled(&pool, id, false).await.unwrap();
+
+        assert!(!off.enabled);
+        assert_eq!(off.name, "Phone");
+        assert!(token_set(&off));
+        assert_eq!(off.last_delivery.map(|d| d.at), Some(100));
+        assert_eq!(untouched_columns(&pool, id).await, before);
+        assert!(updated_at(&pool, id).await > 0);
+        assert_eq!(saved_token(&pool, id).await.as_deref(), Some("tk_secret"));
+        assert!(
+            set_connection_enabled(&pool, id, true)
+                .await
+                .unwrap()
+                .enabled
+        );
+    }
+
+    #[tokio::test]
+    async fn set_connection_enabled_answers_not_found_for_an_unknown_id() {
+        let pool = pool().await;
+
+        let result = set_connection_enabled(&pool, 42, false).await;
+
+        assert!(matches!(result, Err(NotifyError::NotFound)));
+    }
+}
+
 mod delete_connection {
     use super::*;
 
@@ -366,6 +427,10 @@ mod db_errors {
         ));
         assert!(matches!(
             get_connection(&pool, 1).await,
+            Err(NotifyError::Db(_))
+        ));
+        assert!(matches!(
+            set_connection_enabled(&pool, 1, false).await,
             Err(NotifyError::Db(_))
         ));
         assert!(matches!(

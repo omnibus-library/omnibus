@@ -37,6 +37,22 @@ fn notification_connection_input_is_enabled_when_enabled_is_left_out() {
 }
 
 #[test]
+fn notification_connection_enabled_takes_only_a_bool_enabled() {
+    let on: NotificationConnectionEnabled =
+        serde_json::from_value(json!({ "enabled": true })).unwrap();
+    assert!(on.enabled);
+
+    for body in [
+        json!({}),
+        json!({ "enabled": "yes" }),
+        json!({ "enabled": true, "name": "x" }),
+    ] {
+        let parsed = serde_json::from_value::<NotificationConnectionEnabled>(body.clone());
+        assert!(parsed.is_err(), "{body}");
+    }
+}
+
+#[test]
 fn connection_settings_status_serializes_with_the_kind_tag_beside_its_fields() {
     let status = ConnectionSettingsStatus::Ntfy(NtfySettingsStatus {
         server_url: "https://ntfy.example.com".into(),

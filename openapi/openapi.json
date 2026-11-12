@@ -916,7 +916,7 @@
           "Admin"
         ],
         "summary": "Replace a notification connection",
-        "description": "Replaces every field of a saved connection. A token or password left out or null keeps\nthe saved one, and an empty string clears it; switching `auth` drops the old mode's\nsecrets. A saved secret is kept only for the address it was saved for: when\n`server_url` changes, or for a password the `username`, it must be given again. Needs an\nadmin account.",
+        "description": "Replaces every field of a saved connection. A token or password left out or null keeps\nthe saved one, and an empty string clears it; switching `auth` drops the old mode's\nsecrets. A saved secret is kept only for the address it was saved for: when\n`server_url` changes, or for a password the `username`, it must be given again. To switch\na connection on or off, use `PATCH` on the same path, which changes nothing else. Needs an\nadmin account.",
         "operationId": "update_notification_connection",
         "parameters": [
           {
@@ -990,6 +990,57 @@
           },
           "404": {
             "description": "No connection has that id."
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Turn a notification connection on or off",
+        "description": "Switches a connection on or off and changes nothing else, so it can't undo another\nadmin's edit of the name, settings or events. A connection that is off sends nothing, and\nwhat was queued for it is dropped unsent. Needs an admin account.",
+        "operationId": "set_notification_connection_enabled",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The connection's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotificationConnectionEnabled"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The connection is switched; the body is the whole connection as it now is.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationConnection"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You aren't an admin."
+          },
+          "404": {
+            "description": "No connection has that id."
+          },
+          "422": {
+            "description": "The body isn't `{\"enabled\": true}` or `{\"enabled\": false}`: `enabled` is missing or not a boolean, or another field is present."
           }
         }
       }
@@ -15118,6 +15169,20 @@
             "$ref": "#/components/schemas/ConnectionSettingsStatus"
           }
         }
+      },
+      "NotificationConnectionEnabled": {
+        "type": "object",
+        "description": "Switches a notification connection on or off. It carries nothing else, so a switch\ncan't undo another admin's edit of the connection's other fields.",
+        "required": [
+          "enabled"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "True to send the connection's notifications, false to send none."
+          }
+        },
+        "additionalProperties": false
       },
       "NotificationConnectionInput": {
         "type": "object",

@@ -1,7 +1,8 @@
-//! Rows of `notification_connections`: the admin routes' create, read, update and delete,
-//! and the list each connection shows with how its last finished notification went. Every
-//! write is checked here first, and an update merges over the saved row in one write
-//! transaction, so a secret left out is kept even when two saves race.
+//! Rows of `notification_connections`: the admin routes' create, read, update, switch and
+//! delete, and the list each connection shows with how its last finished notification went.
+//! Every write is checked here first, and an update merges over the saved row in one write
+//! transaction, so a secret left out is kept even when two saves race. The on/off switch
+//! writes its one column alone, so it can't undo a concurrent edit of the rest.
 
 use omnibus_shared::{
     NotificationConnection, NotificationConnectionInput, NotificationEvent,
@@ -83,11 +84,8 @@ pub async fn list_connections(
     pool: &SqlitePool,
 ) -> Result<Vec<NotificationConnection>, NotifyError> {
     let rows = sqlx::query(&format!(
-        "SELECT c.id, c.name, c.enabled, c.events, c.settings,
-                d.finished_at, d.state AS last_state, d.last_error
-           FROM notification_connections c
-           LEFT JOIN notification_deliveries d ON d.id = {LAST_FINISHED}
-          ORDER BY c.name COLLATE NOCASE, c.id"
+        "{} ORDER BY c.name COLLATE NOCASE, c.id",
+        with_last_delivery()
     ))
     .fetch_all(pool)
     .await?;
@@ -159,6 +157,34 @@ pub async fn update_connection(
     Ok(wire(id, draft, last))
 }
 
+/// Switch connection `id` on or off, changing nothing but `enabled` and `updated_at`, and
+/// return it as the list shows it. [`NotifyError::NotFound`] when no connection has that id.
+pub async fn set_connection_enabled(
+    pool: &SqlitePool,
+    id: i64,
+    enabled: bool,
+) -> Result<NotificationConnection, NotifyError> {
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+    let switched = sqlx::query(&format!(
+        "UPDATE notification_connections SET enabled = ?, updated_at = {NOW} WHERE id = ?"
+    ))
+    .bind(enabled)
+    .bind(id)
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    if switched == 0 {
+        return Err(NotifyError::NotFound);
+    }
+    let row = sqlx::query(&format!("{} WHERE c.id = ?", with_last_delivery()))
+        .bind(id)
+        .fetch_one(&mut *tx)
+        .await?;
+    let connection = row_to_wire(&row)?;
+    tx.commit().await?;
+    Ok(connection)
+}
+
 /// Delete connection `id` and every notification queued or sent for it.
 /// [`NotifyError::NotFound`] when no connection has that id.
 pub async fn delete_connection(pool: &SqlitePool, id: i64) -> Result<(), NotifyError> {
@@ -171,6 +197,16 @@ pub async fn delete_connection(pool: &SqlitePool, id: i64) -> Result<(), NotifyE
         return Err(NotifyError::NotFound);
     }
     Ok(())
+}
+
+/// Each connection's columns beside its last finished delivery's, for a list or one row.
+fn with_last_delivery() -> String {
+    format!(
+        "SELECT c.id, c.name, c.enabled, c.events, c.settings,
+                d.finished_at, d.state AS last_state, d.last_error
+           FROM notification_connections c
+           LEFT JOIN notification_deliveries d ON d.id = {LAST_FINISHED}"
+    )
 }
 
 async fn load(conn: &mut SqliteConnection, id: i64) -> Result<Connection, NotifyError> {

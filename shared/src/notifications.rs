@@ -165,6 +165,16 @@ pub struct NotificationConnectionInput {
     pub settings: ConnectionSettingsInput,
 }
 
+/// Switches a notification connection on or off. It carries nothing else, so a switch
+/// can't undo another admin's edit of the connection's other fields.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(deny_unknown_fields)]
+pub struct NotificationConnectionEnabled {
+    /// True to send the connection's notifications, false to send none.
+    pub enabled: bool,
+}
+
 /// How the most recent notification a connection finished with went.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]

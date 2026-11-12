@@ -1,5 +1,5 @@
-//! Admin REST handlers for notification connections: list, create, replace and delete them,
-//! and send a test message with saved or unsaved settings. Connections are general, so
+//! Admin REST handlers for notification connections: list, create, replace, switch and
+//! delete them, and send a test message with saved or unsaved settings. Connections are general, so
 //! unlike the request connections these routes answer whatever the book-requests flag says;
 //! the flag only decides which events the list offers. No response carries a saved secret.
 
@@ -14,8 +14,8 @@ use omnibus_db::{
     notify::{self, ConnectionSettings, NotifyError},
 };
 use omnibus_shared::{
-    NotificationConnection, NotificationConnectionInput, NotificationConnections,
-    NotificationEvent, NotificationTest,
+    NotificationConnection, NotificationConnectionEnabled, NotificationConnectionInput,
+    NotificationConnections, NotificationEvent, NotificationTest,
 };
 
 use crate::auth::AdminUser;
@@ -81,7 +81,8 @@ pub(super) async fn create_connection(
 /// Replaces every field of a saved connection. A token or password left out or null keeps
 /// the saved one, and an empty string clears it; switching `auth` drops the old mode's
 /// secrets. A saved secret is kept only for the address it was saved for: when
-/// `server_url` changes, or for a password the `username`, it must be given again. Needs an
+/// `server_url` changes, or for a password the `username`, it must be given again. To switch
+/// a connection on or off, use `PATCH` on the same path, which changes nothing else. Needs an
 /// admin account.
 #[utoipa::path(
     put,
@@ -106,6 +107,37 @@ pub(super) async fn update_connection(
     match notify::update_connection(&state.pool, id, &input).await {
         Ok(connection) => Json(connection).into_response(),
         Err(e) => error_response("update a notification connection", e),
+    }
+}
+
+/// Turn a notification connection on or off
+///
+/// Switches a connection on or off and changes nothing else, so it can't undo another
+/// admin's edit of the name, settings or events. A connection that is off sends nothing, and
+/// what was queued for it is dropped unsent. Needs an admin account.
+#[utoipa::path(
+    patch,
+    path = "/api/admin/notifications/connections/{id}",
+    tag = "Admin",
+    operation_id = "set_notification_connection_enabled",
+    params(("id" = i64, Path, description = "The connection's id.")),
+    request_body = NotificationConnectionEnabled,
+    responses(
+        (status = 200, description = "The connection is switched; the body is the whole connection as it now is.", body = NotificationConnection),
+        (status = 403, description = "You aren't an admin."),
+        (status = 404, description = "No connection has that id."),
+        (status = 422, description = "The body isn't `{\"enabled\": true}` or `{\"enabled\": false}`: `enabled` is missing or not a boolean, or another field is present."),
+    ),
+)]
+pub(super) async fn set_connection_enabled(
+    _admin: AdminUser,
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Json(switch): Json<NotificationConnectionEnabled>,
+) -> Response {
+    match notify::set_connection_enabled(&state.pool, id, switch.enabled).await {
+        Ok(connection) => Json(connection).into_response(),
+        Err(e) => error_response("switch a notification connection", e),
     }
 }
 

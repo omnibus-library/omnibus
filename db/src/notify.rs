@@ -33,8 +33,8 @@ pub use outbox::{
 pub use render::{render, render_test, Notice, Outgoing};
 pub use settings::{ConnectionSettings, Secret};
 pub use store::{
-    create_connection, delete_connection, get_connection, list_connections, update_connection,
-    Connection, NAME_MAX_CHARS,
+    create_connection, delete_connection, get_connection, list_connections, set_connection_enabled,
+    update_connection, Connection, NAME_MAX_CHARS,
 };
 
 /// Why a notification connection could not be saved or read.

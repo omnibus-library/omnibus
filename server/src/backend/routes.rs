@@ -404,6 +404,7 @@ fn notification_routes() -> OpenApiRouter<AppState> {
         ))
         .routes(routes!(
             notifications::update_connection,
+            notifications::set_connection_enabled,
             notifications::delete_connection
         ))
         .routes(routes!(notifications::post_test))

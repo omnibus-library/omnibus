@@ -178,6 +178,29 @@ mod drain_due {
     }
 
     #[tokio::test]
+    async fn drain_due_drops_what_was_queued_while_switched_off_and_sends_once_back_on() {
+        let pool = pool().await;
+        let server = ntfy_answering(ResponseTemplate::new(200)).await;
+        let request = queued_for(&pool, &server).await;
+        let connection = deliveries(&pool).await[0].connection_id;
+        set_connection_enabled(&pool, connection, false)
+            .await
+            .unwrap();
+
+        let off = drain_due(&pool, &client()).await.unwrap();
+        set_connection_enabled(&pool, connection, true)
+            .await
+            .unwrap();
+        queue_event(&pool, connection, request).await;
+        let on = drain_due(&pool, &client()).await.unwrap();
+
+        assert_eq!(off.dropped, 1);
+        assert_eq!(on.delivered, 1);
+        assert_eq!(server.received_requests().await.unwrap().len(), 1);
+        assert_eq!(only(&pool).await.state, "delivered");
+    }
+
+    #[tokio::test]
     async fn drain_due_drops_a_notification_quietly_when_the_connection_was_turned_off() {
         let pool = pool().await;
         let server = ntfy_answering(ResponseTemplate::new(200)).await;

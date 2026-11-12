@@ -8,8 +8,8 @@ use axum::{
     Json, Router,
 };
 use omnibus_shared::{
-    ConnectionSettingsStatus, NotificationConnection, NotificationConnectionInput,
-    NotificationConnections, NotificationEvent, NotificationTest,
+    ConnectionSettingsStatus, NotificationConnection, NotificationConnectionEnabled,
+    NotificationConnectionInput, NotificationConnections, NotificationEvent, NotificationTest,
 };
 use serde_json::{json, Value};
 use tower::ServiceExt;
@@ -115,10 +115,11 @@ async fn authorizations(server: &MockServer) -> Vec<String> {
 mod gate {
     use super::*;
 
-    const ROUTES: [(&str, &str); 5] = [
+    const ROUTES: [(&str, &str); 6] = [
         ("GET", CONNECTIONS),
         ("POST", CONNECTIONS),
         ("PUT", "/api/admin/notifications/connections/1"),
+        ("PATCH", "/api/admin/notifications/connections/1"),
         ("DELETE", "/api/admin/notifications/connections/1"),
         ("POST", TEST),
     ];
@@ -126,6 +127,7 @@ mod gate {
     fn body_for(method: &str, uri: &str) -> Option<Value> {
         match (method, uri) {
             ("GET" | "DELETE", _) => None,
+            ("PATCH", _) => Some(json!({ "enabled": false })),
             (_, TEST) => Some(json!({ "settings": ntfy("http://127.0.0.1:9") })),
             _ => Some(connection("Phone", ntfy("http://127.0.0.1:9"))),
         }
@@ -434,6 +436,86 @@ mod update_connection {
     }
 }
 
+mod set_connection_enabled {
+    use super::*;
+
+    #[tokio::test]
+    async fn set_connection_enabled_answers_200_with_the_whole_connection_and_no_secret() {
+        let (app, _, pool) = fixture().await;
+        let token = admin_token(&pool).await;
+        let created = create(
+            &app,
+            &token,
+            connection("Phone", with_token("http://127.0.0.1:9", Some(TOKEN))),
+        )
+        .await;
+        let uri = format!("{CONNECTIONS}/{}", created.id);
+
+        let (status, text) = call(
+            &app,
+            &token,
+            "PATCH",
+            &uri,
+            Some(json!({ "enabled": false })),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert!(!text.contains(TOKEN), "{text}");
+        let switched: NotificationConnection = serde_json::from_str(&text).unwrap();
+        assert!(!switched.enabled);
+        assert_eq!(switched.name, created.name);
+        assert_eq!(switched.events, created.events);
+        assert_eq!(switched.settings, created.settings);
+        assert!(status_of(&switched).token_set);
+        assert_eq!(switched.last_delivery, None);
+    }
+
+    #[tokio::test]
+    async fn set_connection_enabled_answers_404_for_an_unknown_id() {
+        let (app, _, pool) = fixture().await;
+        let token = admin_token(&pool).await;
+
+        let (status, _) = call(
+            &app,
+            &token,
+            "PATCH",
+            &format!("{CONNECTIONS}/42"),
+            Some(json!({ "enabled": true })),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn set_connection_enabled_answers_422_for_a_body_that_is_not_just_a_bool_enabled() {
+        let (app, _, pool) = fixture().await;
+        let token = admin_token(&pool).await;
+        let id = create(
+            &app,
+            &token,
+            connection("Phone", ntfy("http://127.0.0.1:9")),
+        )
+        .await
+        .id;
+        let uri = format!("{CONNECTIONS}/{id}");
+
+        for body in [
+            json!({}),
+            json!({ "enabled": "yes" }),
+            json!({ "enabled": true, "name": "x" }),
+        ] {
+            let (status, _) = call(&app, &token, "PATCH", &uri, Some(body.clone())).await;
+            assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+        }
+        let (_, text) = call(&app, &token, "GET", CONNECTIONS, None).await;
+        let listed: NotificationConnections = serde_json::from_str(&text).unwrap();
+        assert!(listed.connections[0].enabled);
+        assert_eq!(listed.connections[0].name, "Phone");
+    }
+}
+
 mod delete_connection {
     use super::*;
 
@@ -628,6 +710,14 @@ mod db_errors {
             super::super::update_connection(admin(), State(state.clone()), Path(1), Json(input()))
                 .await
                 .status(),
+            super::super::set_connection_enabled(
+                admin(),
+                State(state.clone()),
+                Path(1),
+                Json(NotificationConnectionEnabled { enabled: false }),
+            )
+            .await
+            .status(),
             super::super::delete_connection(admin(), State(state.clone()), Path(1))
                 .await
                 .status(),
@@ -636,6 +726,6 @@ mod db_errors {
                 .status(),
         ];
 
-        assert_eq!(statuses, [StatusCode::INTERNAL_SERVER_ERROR; 5]);
+        assert_eq!(statuses, [StatusCode::INTERNAL_SERVER_ERROR; 6]);
     }
 }
