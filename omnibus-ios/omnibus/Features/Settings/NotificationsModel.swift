@@ -18,6 +18,8 @@ struct NotificationsAPI: Sendable {
     var connections: @Sendable () async throws -> NotificationConnections
     var create: @Sendable (NotificationConnectionInput) async throws -> NotificationConnection
     var update: @Sendable (Int64, NotificationConnectionInput) async throws -> NotificationConnection
+    /// Turns a connection on or off: the id, then whether it is on.
+    var setEnabled: @Sendable (Int64, Bool) async throws -> NotificationConnection
     var delete: @Sendable (Int64) async throws -> Void
     var test: @Sendable (NotificationTest) async throws -> Void
 
@@ -27,6 +29,7 @@ struct NotificationsAPI: Sendable {
         connections: { try await NotificationService.connections() },
         create: { try await NotificationService.create($0) },
         update: { try await NotificationService.update(id: $0, $1) },
+        setEnabled: { try await NotificationService.setEnabled(id: $0, enabled: $1) },
         delete: { try await NotificationService.delete(id: $0) },
         test: { try await NotificationService.test($0) }
     )
@@ -147,16 +150,17 @@ final class NotificationsModel {
     // MARK: - Connections
 
     /// Turns a connection on or off in place; a refusal turns it back and says why.
+    /// Only `enabled` is sent, so it needs nothing from the settings: a provider
+    /// this build can't edit can still be switched. The row takes the server's
+    /// answer whole, picking up any edit another admin saved meanwhile.
     func setEnabled(_ connection: NotificationConnection, _ enabled: Bool) async {
-        guard !toggling.contains(connection.id),
-              let input = NtfyDraft.toggled(connection, enabled: enabled)
-        else { return }
+        guard !toggling.contains(connection.id) else { return }
         toggling.insert(connection.id)
         rowErrors[connection.id] = nil
         listNotice = nil
         replace(connection.id) { $0.enabled = enabled }
         do {
-            let saved = try await api.update(connection.id, input)
+            let saved = try await api.setEnabled(connection.id, enabled)
             // A row deleted while this was out stays deleted.
             if connections.contains(where: { $0.id == saved.id }) {
                 upsert(saved)

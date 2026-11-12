@@ -8,6 +8,10 @@ import Testing
 
 @testable import omnibus
 
+/// The server's sentence for an ntfy 403, exactly as the contract writes it.
+private let forbiddenSentence =
+    "ntfy didn't let this sign-in post to the topic. Check that the token or account can write to it."
+
 /// A form that passes every check, to break one field at a time.
 private func valid() -> NtfyDraft {
     var draft = NtfyDraft(offering: [.requestNeedsChooser])
@@ -244,11 +248,12 @@ struct NtfyDraftTests {
         #expect(delivered.error == nil)
 
         let failed = NotificationsFlow.delivery(
-            NotificationLastDelivery(at: 1_790_000_000, ok: false, error: "the server answered 403"), now: now
+            NotificationLastDelivery(at: 1_790_000_000, ok: false, error: forbiddenSentence), now: now
         )
         #expect(failed.tone == .bad)
         #expect(failed.text.hasPrefix("Failed "))
-        #expect(failed.error == "the server answered 403")
+        // The server's sentence, untouched.
+        #expect(failed.error == forbiddenSentence)
     }
 
     @Test("the public URL's source is said in plain words")

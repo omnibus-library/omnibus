@@ -273,6 +273,11 @@ struct NotificationConnectionInput: Encodable, Hashable, Sendable {
     var settings: ConnectionSettingsInput
 }
 
+/// Turns a saved connection on or off, and changes nothing else about it.
+struct NotificationConnectionEnabled: Encodable, Hashable, Sendable {
+    var enabled: Bool
+}
+
 /// Settings to send a test with. `id` names the saved connection whose secrets
 /// fill in the ones `settings` leaves out.
 struct NotificationTest: Encodable, Hashable, Sendable {

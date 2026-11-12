@@ -22,6 +22,12 @@ private func encodedSettings(_ value: some Encodable) throws -> [String: Any] {
     try #require(try encodedObject(value)["settings"] as? [String: Any])
 }
 
+/// The server's sentence for an ntfy 401, exactly as the contract writes it.
+let unauthorizedSentence = "ntfy refused the sign-in. Check the access token, or the username and password."
+/// The server's sentence for a connection it couldn't reach.
+let refusedConnectionSentence =
+    "Couldn't connect to the ntfy server. Check the server URL and that the server is running."
+
 let connectionsJSON = """
     {"connections":[
      {"id":1,"name":"Ada\u{2019}s phone","enabled":true,"events":["request_needs_chooser"],
@@ -33,7 +39,7 @@ let connectionsJSON = """
       "settings":{"kind":"ntfy","server_url":"https://example.com/ntfy","topic":"den","auth":"basic",
        "username":"sam","token_set":false,"password_set":true,"priority":3,"tags":[],
        "include_details":false},
-      "last_delivery":{"at":1790000100,"ok":false,"error":"the server answered 401 Unauthorized: {\\"code\\":40101}"}},
+      "last_delivery":{"at":1790000100,"ok":false,"error":"ntfy refused the sign-in. Check the access token, or the username and password."}},
      {"id":3,"name":"Fresh","enabled":true,"events":["request_needs_chooser"],
       "settings":{"kind":"ntfy","server_url":"http://10.0.0.2:8080","topic":"t","auth":"none",
        "username":null,"token_set":false,"password_set":false,"priority":1,"tags":[],
@@ -77,7 +83,7 @@ struct NotificationsCodecTests {
         let failed = list.connections[1]
         #expect(!failed.enabled)
         #expect(failed.lastDelivery?.ok == false)
-        #expect(failed.lastDelivery?.error == "the server answered 401 Unauthorized: {\"code\":40101}")
+        #expect(failed.lastDelivery?.error == unauthorizedSentence)
         if case let .ntfy(basic) = failed.settings {
             #expect(basic.auth == .basic)
             #expect(basic.username == "sam")
@@ -149,7 +155,6 @@ struct NotificationsCodecTests {
         #expect(settings.auth == .unknown("oauth"))
         #expect(!NotificationsFlow.isEditable(connection))
         #expect(NtfyDraft(editing: connection) == nil)
-        #expect(NtfyDraft.toggled(connection, enabled: false) == nil)
         #expect(NotificationsFlow.detail(connection).hasPrefix("ntfy \u{00B7} ntfy.sh/hub"))
         #expect(NotificationsFlow.detail(connection).contains("update the app"))
         #expect(NtfyAuth.choices == [.none, .token, .basic])
@@ -260,28 +265,14 @@ struct NotificationsCodecTests {
         #expect(!settings.keys.contains("username"))
     }
 
-    @Test("turning a connection off sends it as saved with no secret")
-    func enabledTogglePayload() throws {
-        let saved = try savedConnections()[0]
-        let input = try #require(NtfyDraft.toggled(saved, enabled: false))
-        let object = try encodedObject(input)
-        #expect(object["enabled"] as? Bool == false)
-        #expect(object["name"] as? String == saved.name)
-        #expect(object["events"] as? [String] == ["request_needs_chooser"])
-
-        let settings = try encodedSettings(input)
-        #expect(settings["server_url"] as? String == "https://ntfy.sh")
-        #expect(settings["topic"] as? String == "books")
-        #expect(settings["auth"] as? String == "token")
-        #expect(settings["priority"] as? Int == 4)
-        #expect(settings["tags"] as? [String] == ["books", "bell"])
-        #expect(!settings.keys.contains("token"))
-        #expect(!settings.keys.contains("password"))
-    }
-
-    @Test("a provider this build doesn't know has no toggle payload")
-    func unknownKindCannotBeToggled() throws {
-        #expect(NtfyDraft.toggled(try savedConnections()[3], enabled: false) == nil)
+    @Test("turning a connection on or off sends exactly one key, enabled")
+    func enabledBodyIsOnlyEnabled() throws {
+        let off = try encodedObject(NotificationConnectionEnabled(enabled: false))
+        #expect(Set(off.keys) == ["enabled"])
+        #expect(off["enabled"] as? Bool == false)
+        let on = try encodedObject(NotificationConnectionEnabled(enabled: true))
+        #expect(Set(on.keys) == ["enabled"])
+        #expect(on["enabled"] as? Bool == true)
     }
 
     @Test("a test of a saved connection names it, so a blank secret falls back to the saved one")
@@ -315,6 +306,7 @@ struct NotificationsCodecTests {
         #expect(R.create == NotificationRoute(method: "POST", path: "/api/admin/notifications/connections"))
         #expect(R.update(id: 7) == NotificationRoute(method: "PUT", path: "/api/admin/notifications/connections/7"))
         #expect(R.delete(id: 7) == NotificationRoute(method: "DELETE", path: "/api/admin/notifications/connections/7"))
+        #expect(R.setEnabled(id: 7) == NotificationRoute(method: "PATCH", path: "/api/admin/notifications/connections/7"))
         #expect(R.test == NotificationRoute(method: "POST", path: "/api/admin/notifications/test"))
     }
 
@@ -337,9 +329,11 @@ struct NotificationsCodecTests {
             NotificationsFlow.message(APIError.http(status: 422, message: "public url must start with http:// or https://"))
                 == "public url must start with http:// or https://"
         )
+        // A provider's answer arrives as a whole sentence and is shown as it came.
+        #expect(NotificationsFlow.message(APIError.http(status: 502, message: unauthorizedSentence)) == unauthorizedSentence)
         #expect(
-            NotificationsFlow.message(APIError.http(status: 502, message: "the server answered 401 Unauthorized"))
-                == "the server answered 401 Unauthorized"
+            NotificationsFlow.message(APIError.http(status: 502, message: refusedConnectionSentence))
+                == refusedConnectionSentence
         )
         #expect(NotificationsFlow.message(APIError.offline) == "You're offline.")
         #expect(NotificationsFlow.message(FakeFailure()) == "boom")

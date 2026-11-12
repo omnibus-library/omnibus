@@ -292,7 +292,8 @@ private struct ConnectionRow: View {
 
     @Environment(\.palette) private var palette
 
-    /// Only a provider and sign-in this build knows can be edited or switched.
+    /// Only a provider and sign-in this build knows can be edited; any row can
+    /// be switched, since the switch sends nothing but `enabled`.
     private var isKnown: Bool { NotificationsFlow.isEditable(connection) }
 
     var body: some View {
@@ -318,7 +319,7 @@ private struct ConnectionRow: View {
                 ))
                 .labelsHidden()
                 .tint(palette.accentColor)
-                .disabled(!isKnown || !isOnline || isSaving)
+                .disabled(!isOnline || isSaving)
                 .accessibilityIdentifier("notifications.row.\(connection.id).enabled")
             }
             .padding(.vertical, 13)
@@ -357,11 +358,13 @@ private struct ConnectionRow: View {
             }
             .padding(.top, 2)
 
+            // The server's own sentence, whole: cut short it stops mid-instruction.
             if let error = delivery.error {
                 Text(error)
-                    .font(.ui(12))
-                    .foregroundStyle(palette.ink2Color)
-                    .lineLimit(2)
+                    .font(.ui(12.5))
+                    .foregroundStyle(palette.ink1Color)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("notifications.row.\(connection.id).error")
             }
 
             if let rowError {

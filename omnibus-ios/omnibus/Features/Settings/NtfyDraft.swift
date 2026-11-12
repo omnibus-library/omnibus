@@ -6,8 +6,7 @@
 //  opens with both fields blank and remembers only whether each is set. Blank
 //  then means "keep it": the key is left out of what is sent. The server keeps
 //  a secret only for the address (and username) it was saved with, so editing
-//  either asks for it again. A turn of a row's switch goes through here too,
-//  carrying no secret at all.
+//  either asks for it again.
 
 import Foundation
 
@@ -190,14 +189,6 @@ struct NtfyDraft: Equatable, Sendable {
         } else {
             events.removeAll { $0 == event }
         }
-    }
-
-    /// What turning a saved connection on or off sends: everything as saved and
-    /// no secret, so both are kept. Nil for a provider this build doesn't know.
-    static func toggled(_ connection: NotificationConnection, enabled: Bool) -> NotificationConnectionInput? {
-        guard var draft = NtfyDraft(editing: connection) else { return nil }
-        draft.enabled = enabled
-        return draft.input
     }
 }
 

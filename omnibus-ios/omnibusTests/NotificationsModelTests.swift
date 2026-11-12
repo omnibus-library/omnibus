@@ -23,12 +23,13 @@ func fakeNotificationsAPI(
     connections: @escaping @Sendable () async throws -> NotificationConnections = { throw FakeFailure() },
     create: @escaping @Sendable (NotificationConnectionInput) async throws -> NotificationConnection = { _ in throw FakeFailure() },
     update: @escaping @Sendable (Int64, NotificationConnectionInput) async throws -> NotificationConnection = { _, _ in throw FakeFailure() },
+    setEnabled: @escaping @Sendable (Int64, Bool) async throws -> NotificationConnection = { _, _ in throw FakeFailure() },
     delete: @escaping @Sendable (Int64) async throws -> Void = { _ in throw FakeFailure() },
     test: @escaping @Sendable (NotificationTest) async throws -> Void = { _ in throw FakeFailure() }
 ) -> NotificationsAPI {
     NotificationsAPI(
         publicURL: publicURL, setPublicURL: setPublicURL, connections: connections,
-        create: create, update: update, delete: delete, test: test
+        create: create, update: update, setEnabled: setEnabled, delete: delete, test: test
     )
 }
 
@@ -163,59 +164,65 @@ struct NotificationsModelTests {
 
     // MARK: - A row's switch
 
-    @Test func turningOffSavesInPlaceWithNoSecret() async throws {
+    @Test func aSwitchSendsOnlyWhetherItIsOnAndTakesTheServersAnswer() async throws {
         let saved = try savedConnections()
-        let sent = Sent<NotificationConnectionInput>()
+        let sent = Sent<String>()
         let model = await loadedModel(connections: saved) { api in
             var api = api
-            api.update = { id, input in
-                await sent.record(input)
+            api.setEnabled = { id, enabled in
+                await sent.record("\(id):\(enabled)")
+                // Another admin renamed it meanwhile; the answer carries that too.
                 var answer = saved[0]
-                answer.id = id
-                answer.enabled = input.enabled
+                answer.enabled = enabled
+                answer.name = "Ada\u{2019}s kitchen phone"
                 return answer
+            }
+            api.update = { _, _ in
+                await sent.record("put")
+                throw FakeFailure()
             }
             return api
         }
         await model.setEnabled(saved[0], false)
-        #expect(model.connections[0].enabled == false)
+        #expect(await sent.values == ["1:false"])
+        let row = try #require(model.connections.first { $0.id == 1 })
+        #expect(!row.enabled)
+        #expect(row.name == "Ada\u{2019}s kitchen phone")
         #expect(model.toggling.isEmpty)
-        let input = try #require(await sent.values.first)
-        #expect(!input.enabled)
-        switch input.settings {
-        case let .ntfy(settings):
-            #expect(settings.token == nil)
-            #expect(settings.password == nil)
-        }
+        #expect(model.rowErrors[1] == nil)
     }
 
     @Test func aRefusedSwitchTurnsBackAndSaysWhy() async throws {
         let saved = try savedConnections()
         let model = await loadedModel(connections: saved) { api in
             var api = api
-            api.update = { _, _ in throw APIError.http(status: 422, message: "a token is required when auth is token") }
+            api.setEnabled = { _, _ in throw APIError.http(status: 500, message: "database is locked") }
             return api
         }
         await model.setEnabled(saved[0], false)
         #expect(model.connections[0].enabled)
-        #expect(model.rowErrors[1] == "a token is required when auth is token")
+        #expect(model.rowErrors[1] == "database is locked")
         #expect(model.toggling.isEmpty)
     }
 
-    @Test func aProviderThisBuildDoesntKnowIsNeverSwitched() async throws {
+    @Test func aProviderThisBuildCantEditCanStillBeSwitched() async throws {
         let saved = try savedConnections()
-        let calls = CallCounter()
+        let sent = Sent<String>()
         let model = await loadedModel(connections: saved) { api in
             var api = api
-            api.update = { _, _ in
-                _ = await calls.next()
-                throw FakeFailure()
+            api.setEnabled = { id, enabled in
+                await sent.record("\(id):\(enabled)")
+                var answer = saved[3]
+                answer.enabled = enabled
+                return answer
             }
             return api
         }
+        #expect(!NotificationsFlow.isEditable(saved[3]))
         await model.setEnabled(saved[3], false)
-        #expect(await calls.next() == 1)
-        #expect(model.connections[3].enabled)
+        #expect(await sent.values == ["4:false"])
+        #expect(model.connections.first { $0.id == 4 }?.enabled == false)
+        #expect(model.connections.first { $0.id == 4 }?.settings == .unknown(kind: "gotify"))
     }
 
     // MARK: - Delete and upsert
@@ -326,10 +333,10 @@ struct NotificationsModelTests {
 
     @Test func aFailedTestShowsTheProvidersAnswer() async {
         let sheet = NtfySheetModel(draft: filledDraft(), api: fakeNotificationsAPI(test: { _ in
-            throw APIError.http(status: 502, message: "the server answered 401 Unauthorized: {\"code\":40101}")
+            throw APIError.http(status: 502, message: unauthorizedSentence)
         }))
         await sheet.test()
-        #expect(sheet.testState == .failed("the server answered 401 Unauthorized: {\"code\":40101}"))
+        #expect(sheet.testState == .failed(unauthorizedSentence))
     }
 
     @Test func aTestOfAnEditNamesTheSavedConnection() async throws {
@@ -433,7 +440,7 @@ struct NotificationsRaceTests {
         let gate = Gate()
         let calls = Calls()
         let model = racingModel(stale: saved, fresh: off, gate: gate, calls: calls) { api in
-            api.update = { _, _ in off[0] }
+            api.setEnabled = { _, _ in off[0] }
         }
         await model.load()
         let refresh = Task { await model.load() }
@@ -469,7 +476,7 @@ struct NotificationsRaceTests {
         let gate = Gate()
         let model = await loadedModel(connections: saved) { api in
             var api = api
-            api.update = { _, _ in
+            api.setEnabled = { _, _ in
                 await gate.wait()
                 return saved[0]
             }
@@ -493,11 +500,11 @@ struct NotificationsRaceTests {
         let calls = Calls()
         let model = await loadedModel(connections: saved) { api in
             var api = api
-            api.update = { _, input in
+            api.setEnabled = { _, enabled in
                 _ = await calls.next()
                 await gate.wait()
                 var answer = saved[0]
-                answer.enabled = input.enabled
+                answer.enabled = enabled
                 return answer
             }
             return api
@@ -538,7 +545,7 @@ struct NotificationsRaceTests {
         let saved = try savedConnections()
         let model = await loadedModel(connections: saved) { api in
             var api = api
-            api.update = { _, _ in throw notFound }
+            api.setEnabled = { _, _ in throw notFound }
             return api
         }
         await model.setEnabled(saved[0], false)

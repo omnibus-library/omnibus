@@ -28,6 +28,10 @@ enum NotificationService {
             NotificationRoute(method: "PUT", path: "\(connectionsPath)/\(id)")
         }
 
+        static func setEnabled(id: Int64) -> NotificationRoute {
+            NotificationRoute(method: "PATCH", path: "\(connectionsPath)/\(id)")
+        }
+
         static func delete(id: Int64) -> NotificationRoute {
             NotificationRoute(method: "DELETE", path: "\(connectionsPath)/\(id)")
         }
@@ -59,6 +63,12 @@ enum NotificationService {
         try await send(Routes.update(id: id), body: input)
     }
 
+    /// Turns a connection on or off, sending nothing but `enabled`, so an edit
+    /// another admin saved meanwhile stands. Answers the connection as it now is.
+    static func setEnabled(id: Int64, enabled: Bool) async throws -> NotificationConnection {
+        try await send(Routes.setEnabled(id: id), body: NotificationConnectionEnabled(enabled: enabled))
+    }
+
     /// Answers 204.
     static func delete(id: Int64) async throws {
         let _: Empty = try await send(Routes.delete(id: id), body: Optional<Empty>.none)
@@ -79,6 +89,7 @@ enum NotificationService {
         case ("GET", _): return try await client.get(route.path)
         case let ("POST", body?): return try await client.post(route.path, body: body)
         case let ("PUT", body?): return try await client.put(route.path, body: body)
+        case let ("PATCH", body?): return try await client.patch(route.path, body: body)
         case ("DELETE", _): return try await client.delete(route.path)
         default: throw APIError.transport("no request for \(route.method) \(route.path)")
         }
