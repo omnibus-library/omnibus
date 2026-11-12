@@ -130,7 +130,7 @@ impl From<ViewFiltersWire> for ViewFilters {
 }
 
 /// An include clause over the values of a stored facet that [`ViewFilters::validate`]
-/// would accept, so an old record never loads into a filter the API rejects. It keeps
+/// would accept, so a stored legacy facet never loads into a filter the API rejects. It keeps
 /// at most `budget` values, what is left of [`MAX_FILTER_TOTAL_VALUES`].
 fn legacy_clause(field: FilterField, values: Vec<String>, budget: usize) -> Option<FilterClause> {
     let values: Vec<String> = values

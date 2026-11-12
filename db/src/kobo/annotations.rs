@@ -19,9 +19,9 @@ pub enum KoboAnnotationSyncError {
     Sqlx(#[from] sqlx::Error),
 }
 
-/// Whether this device has had its first clean PATCH for this book ingested.
-/// Until then, `GET .../annotations` must not answer an empty-but-valid set —
-/// delete-by-omission would wipe highlights made before wireless sync existed.
+/// Whether this device has had its first clean PATCH for this book ingested. Tests use it
+/// to read adoption back; the GET guards on [`may_serve_empty`], which also counts an ack.
+#[cfg(any(test, feature = "test-support"))]
 pub async fn is_adopted(
     pool: &SqlitePool,
     device_id: i64,

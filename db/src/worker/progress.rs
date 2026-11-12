@@ -49,7 +49,7 @@ impl Worker {
     }
 
     /// Shared snapshot body for [`Worker::progress_snapshot`],
-    /// [`Worker::owner_scoped_snapshot`], and
+    /// [`Worker::owner_scoped_snapshot`], [`Worker::reader_snapshot`], and
     /// [`Worker::progress_snapshot_with_retention`]. `viewer` narrows the
     /// result to unowned entries plus that user's own when set; `None`
     /// returns everything. `redact` hides paths from the copies it returns.
@@ -81,7 +81,7 @@ impl Worker {
             let mut progress = entry.progress.clone();
             if redact {
                 progress.resource_key = None;
-                let theirs = viewer.is_some() && entry.owner == viewer;
+                let theirs = entry.owner == viewer;
                 if let (false, ProgressState::Failed { message }) = (theirs, &mut progress.state) {
                     *message = REDACTED_FAILURE.to_string();
                 }
