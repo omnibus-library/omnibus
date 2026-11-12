@@ -38,7 +38,7 @@ pub struct Outgoing {
     pub headers: Vec<(&'static str, String)>,
     pub body: String,
     /// Every form of the credentials this request carries that a provider might echo back,
-    /// so none reaches an error message.
+    /// so none reaches the log line a failed send writes.
     pub secrets: Vec<String>,
 }
 
