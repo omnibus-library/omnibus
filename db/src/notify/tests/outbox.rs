@@ -378,6 +378,10 @@ mod drain_due {
         let row = only(&pool).await;
         assert_eq!(row.state, "failed");
         assert_eq!(row.attempts, MAX_ATTEMPTS + 1);
+        assert_eq!(
+            row.last_error,
+            Some(format!("gave up after {MAX_ATTEMPTS} tries"))
+        );
         assert!(server.received_requests().await.unwrap().is_empty());
     }
 
