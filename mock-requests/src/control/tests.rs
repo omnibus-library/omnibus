@@ -268,6 +268,45 @@ async fn ntfy_settings_answer_a_client_error_for_a_bad_body() {
 }
 
 #[tokio::test]
+async fn ntfy_settings_refuse_a_body_they_would_ignore_and_change_nothing() {
+    let mock = spawn().await;
+    control(&mock, "/_mock/ntfy", json!({"fail": "server_error"})).await;
+
+    for body in [
+        json!({}),
+        json!({"times": 2}),
+        json!({"retry_after": 5}),
+        json!({"fail": null, "times": 2}),
+    ] {
+        let reply = control_reply(&mock, "/_mock/ntfy", body.clone()).await;
+
+        assert_eq!(reply.status(), 422, "{body}");
+        let says = reply.text().await.unwrap();
+        assert!(says.contains("fail"), "{body}: {says}");
+    }
+    assert_eq!(ntfy_record(&mock).await["fail"], "server_error");
+}
+
+#[tokio::test]
+async fn ntfy_settings_replace_the_whole_failure_rather_than_merging() {
+    let mock = spawn().await;
+    control(
+        &mock,
+        "/_mock/ntfy",
+        json!({"fail": "rate_limited", "times": 3, "retry_after": 5}),
+    )
+    .await;
+
+    control(&mock, "/_mock/ntfy", json!({"fail": "server_error"})).await;
+
+    let record = ntfy_record(&mock).await;
+    assert_eq!(
+        (&record["fail"], &record["times"], &record["retry_after"]),
+        (&json!("server_error"), &Value::Null, &Value::Null)
+    );
+}
+
+#[tokio::test]
 async fn view_shows_the_ntfy_failure_and_how_many_publishes_were_kept() {
     let mock = spawn().await;
     publish(&mock).await.unwrap();

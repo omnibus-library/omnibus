@@ -13,8 +13,8 @@
 #                                        dropping --requests); --requests turns book
 #                                        requests on, clones the libraries so an
 #                                        import never dirties test_data/, and
-#                                        starts mock-requests (a fake Prowlarr
-#                                        and qBittorrent) wired to the server
+#                                        starts mock-requests (a fake Prowlarr,
+#                                        qBittorrent and ntfy) wired to the server
 #   ios-validate.sh server down          stop it (and the mock)
 #   ios-validate.sh server status        its address and pid, if running, and
 #                                        the mock's address

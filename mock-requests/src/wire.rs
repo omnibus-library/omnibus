@@ -54,6 +54,8 @@ pub enum WireError {
     InUse(String),
     #[error("the server has a notification connection named \"{0}\" that is not this mock's: rename or delete it first")]
     NotificationNameTaken(&'static str),
+    #[error("the server has more than one notification connection named \"{0}\" on a fake ntfy: delete all but one")]
+    NotificationNameRepeated(&'static str),
     #[error("{step} failed: {detail}")]
     Server { step: &'static str, detail: String },
 }
@@ -109,9 +111,18 @@ struct LoginReply {
     token: Option<String>,
 }
 
+/// What wiring left on the server besides the request connections, which it either saved or
+/// failed on.
+#[derive(Debug)]
+pub struct Wired {
+    /// The ntfy connection, or why it wasn't saved: a notification problem never stops the
+    /// request wiring, so the mock serves on.
+    pub ntfy: Result<NtfyWired, WireError>,
+}
+
 /// Point the Omnibus at `server` at the mock at `mock_origin`, with `client` as its download
-/// client and `downloads` as the folder both sides read finished files from, and save the
-/// mock's ntfy connection. Refuses when the server's library sits in a checkout's
+/// client and `downloads` as the folder both sides read finished files from, then try to
+/// save the mock's ntfy connection. Refuses when the server's library sits in a checkout's
 /// `test_data` folder, which an import would write into.
 pub async fn wire(
     server: &str,
@@ -119,7 +130,7 @@ pub async fn wire(
     mock_origin: &str,
     client: DownloadClientKind,
     downloads: &Path,
-) -> Result<NtfyWired, WireError> {
+) -> Result<Wired, WireError> {
     let server = server.trim_end_matches('/');
     if !is_loopback(server) {
         return Err(WireError::Setup(
@@ -133,11 +144,12 @@ pub async fn wire(
     let http = http()?;
     let token = login(&http, server, username, password).await?;
     let update = update_for(mock_origin, client, downloads);
-    let result = async {
-        configure(&http, server, &token, &update).await?;
-        ntfy::wire(&http, server, &token, mock_origin).await
-    }
-    .await;
+    let result = match configure(&http, server, &token, &update).await {
+        Ok(()) => Ok(Wired {
+            ntfy: ntfy::wire(&http, server, &token, mock_origin).await,
+        }),
+        Err(error) => Err(error),
+    };
     // Ending the session is best effort: an admin session left behind just expires.
     let _ = http
         .post(format!("{server}/api/auth/logout"))

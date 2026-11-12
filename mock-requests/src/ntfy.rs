@@ -3,8 +3,9 @@
 //! what it carried and how it was answered, refused ones included, so a developer, a tour or
 //! a test reads exactly what the server sent; the control API lists the record and can make
 //! the next publishes fail. A publish must sign in with [`NTFY_TOKEN`] or the fake clients'
-//! login, or it is refused 401 as a server that requires sign-in would. Refusals carry
-//! ntfy's own JSON error shape.
+//! login, as on a server that requires sign-in: none is refused 403, a wrong one 401.
+//! Refusals carry ntfy's own JSON error shape, and a refused body's readable fields are
+//! still recorded.
 
 use std::collections::VecDeque;
 use std::num::NonZeroU32;
@@ -48,9 +49,8 @@ pub enum Failure {
     Unauthorized,
 }
 
-/// What publishes are answered with: the control API's `PUT /_mock/ntfy` body.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+/// What publishes are answered with, as the control API last set it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
 pub struct Forcing {
     /// The failure to answer with; `None` answers normally.
     pub fail: Option<Failure>,
@@ -64,8 +64,11 @@ pub struct Forcing {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Scheme {
+    /// No `Authorization` header.
     None,
+    /// `Bearer <token>`.
     Bearer,
+    /// `Basic <base64 of user:password>`.
     Basic,
     /// An `Authorization` header of any other scheme.
     Other,
@@ -74,6 +77,7 @@ pub enum Scheme {
 /// The sign-in a publish carried.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Auth {
+    /// The `Authorization` header's scheme.
     pub scheme: Scheme,
     /// Whether it is [`NTFY_TOKEN`] or the fake clients' login.
     pub matched: bool,
@@ -92,13 +96,20 @@ pub struct Published {
     pub status: u16,
     /// The `error` of a refusal; `None` when it was accepted.
     pub error: Option<String>,
+    /// The sign-in it carried.
     pub auth: Auth,
-    /// The body's fields, each `None` when the body didn't hold it.
+    /// The body's `topic`. Each body field is `None` when the body didn't hold it, or held
+    /// something of the wrong type there.
     pub topic: Option<String>,
+    /// The body's `title`.
     pub title: Option<String>,
+    /// The body's `message`.
     pub message: Option<String>,
-    pub priority: Option<u8>,
+    /// The body's `priority`, kept even when it is out of ntfy's range.
+    pub priority: Option<i64>,
+    /// The body's `tags`.
     pub tags: Option<Vec<String>>,
+    /// The body's `click` link.
     pub click: Option<String>,
 }
 
@@ -169,14 +180,72 @@ impl Inbox {
 }
 
 /// The publish JSON fields the fake reads; ntfy's others are taken and ignored.
-#[derive(Default, Deserialize)]
+#[derive(Default)]
 struct Body {
     topic: Option<String>,
     title: Option<String>,
     message: Option<String>,
-    priority: Option<u8>,
+    priority: Option<i64>,
     tags: Option<Vec<String>>,
     click: Option<String>,
+}
+
+impl Body {
+    /// The fields of `bytes`, and how ntfy refuses them, if it does. A field of the wrong type
+    /// is left out and the rest still read, so the record shows what arrived.
+    fn read(bytes: &[u8]) -> (Self, Option<Refusal>) {
+        let Ok(Value::Object(fields)) = serde_json::from_slice(bytes) else {
+            return (Self::default(), Some(NOT_JSON));
+        };
+        let text = |v: &Value| v.as_str().map(str::to_string);
+        let tags = |v: &Value| {
+            let tags = v.as_array()?.iter().map(|t| t.as_str().map(str::to_string));
+            tags.collect::<Option<Vec<_>>>()
+        };
+        let topic = field(&fields, "topic", text);
+        let title = field(&fields, "title", text);
+        let message = field(&fields, "message", text);
+        let priority = field(&fields, "priority", Value::as_i64);
+        let tags = field(&fields, "tags", tags);
+        let click = field(&fields, "click", text);
+        let wrong_type = topic.is_err()
+            || title.is_err()
+            || message.is_err()
+            || priority.is_err()
+            || tags.is_err()
+            || click.is_err();
+        let body = Self {
+            topic: topic.ok().flatten(),
+            title: title.ok().flatten(),
+            message: message.ok().flatten(),
+            priority: priority.ok().flatten(),
+            tags: tags.ok().flatten(),
+            click: click.ok().flatten(),
+        };
+        let refusal = if wrong_type {
+            Some(NOT_JSON)
+        } else if !body.topic.as_deref().is_some_and(topic_ok) {
+            Some(BAD_TOPIC)
+        } else if body.priority.is_some_and(|p| !(0..=5).contains(&p)) {
+            Some(BAD_PRIORITY)
+        } else {
+            None
+        };
+        (body, refusal)
+    }
+}
+
+/// Field `name` of `fields` read by `read`: `Ok(None)` when absent or null, `Err` when it
+/// holds something `read` can't take.
+fn field<T>(
+    fields: &Map<String, Value>,
+    name: &str,
+    read: impl Fn(&Value) -> Option<T>,
+) -> Result<Option<T>, ()> {
+    match fields.get(name) {
+        None | Some(Value::Null) => Ok(None),
+        Some(value) => read(value).map(Some).ok_or(()),
+    }
 }
 
 /// A refusal, with the code and words ntfy answers it with.
@@ -190,6 +259,11 @@ const UNAUTHORIZED: Refusal = Refusal {
     status: StatusCode::UNAUTHORIZED,
     code: 40101,
     error: "unauthorized",
+};
+const FORBIDDEN: Refusal = Refusal {
+    status: StatusCode::FORBIDDEN,
+    code: 40301,
+    error: "forbidden",
 };
 const RATE_LIMITED: Refusal = Refusal {
     status: StatusCode::TOO_MANY_REQUESTS,
@@ -211,11 +285,16 @@ const BAD_TOPIC: Refusal = Refusal {
     code: 40009,
     error: "invalid request: topic invalid",
 };
+const BAD_PRIORITY: Refusal = Refusal {
+    status: StatusCode::BAD_REQUEST,
+    code: 40007,
+    error: "invalid request: priority invalid",
+};
 
 /// `POST /ntfy`: record the publish, then answer it as forced, else as ntfy would.
 async fn publish(State(mock): State<Shared>, headers: HeaderMap, body: Bytes) -> Response {
     let auth = auth_of(&headers);
-    let parsed = serde_json::from_slice::<Body>(&body).ok();
+    let (body, body_refusal) = Body::read(&body);
     let mut inbox = mock.ntfy();
     let forced = inbox.take_failure();
     // ntfy signs a publish in before it reads the body.
@@ -223,14 +302,10 @@ async fn publish(State(mock): State<Shared>, headers: HeaderMap, body: Bytes) ->
         Some((Failure::ServerError, _)) => Some(SERVER_ERROR),
         Some((Failure::RateLimited, _)) => Some(RATE_LIMITED),
         Some((Failure::Unauthorized, _)) => Some(UNAUTHORIZED),
+        None if auth.scheme == Scheme::None => Some(FORBIDDEN),
         None if !auth.matched => Some(UNAUTHORIZED),
-        None => match &parsed {
-            None => Some(NOT_JSON),
-            Some(body) if !body.topic.as_deref().is_some_and(topic_ok) => Some(BAD_TOPIC),
-            Some(_) => None,
-        },
+        None => body_refusal,
     };
-    let body = parsed.unwrap_or_default();
     let published = Published {
         id: inbox.next_id(),
         at: SystemTime::now()

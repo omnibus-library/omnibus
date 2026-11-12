@@ -12,7 +12,7 @@ use axum::{Json, Router};
 use omnibus_shared::DownloadClientKind;
 use serde_json::{json, Value};
 
-use super::{wire, NtfyWired, WireError};
+use super::{wire, WireError, Wired};
 
 /// The mock's origin every wiring test passes.
 pub const MOCK: &str = "http://127.0.0.1:7777";
@@ -213,7 +213,7 @@ pub async fn spawn_stub(config: Config) -> (String, Arc<Stub>) {
 }
 
 /// Wire the stub at `server` with `kind` as the download client.
-pub async fn run(server: &str, kind: DownloadClientKind) -> Result<NtfyWired, WireError> {
+pub async fn run(server: &str, kind: DownloadClientKind) -> Result<Wired, WireError> {
     let seed = Some("admin:s3cret:with-colon");
     wire(server, seed, MOCK, kind, Path::new("/dl")).await
 }

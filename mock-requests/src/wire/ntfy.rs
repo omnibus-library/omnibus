@@ -1,10 +1,11 @@
 //! The notification half of `--local` / `--server`: save an ntfy connection on the server
 //! that publishes to this mock's fake ntfy and is sent the requests that need a version
 //! picked, then have the server send it a test. Runs in [`super::wire`]'s session, after
-//! the request connections. The mock's own connection is told by its name and a loopback
-//! address ending in `/ntfy`, and is updated in place on a later run; a connection of that
-//! name that is not the mock's is never touched. It signs in with [`NTFY_TOKEN`], so the
-//! server's token path runs end to end.
+//! the request connections; a failure here is reported, never fatal to them. The mock's own
+//! connection is told by its name, a loopback address ending in `/ntfy` and a saved token,
+//! and is updated in place on a later run; a connection of that name that is not the mock's
+//! is never touched. It signs in with [`NTFY_TOKEN`], sent on every save, so the server's
+//! token path runs end to end and a new port never strands the saved token.
 
 use omnibus_shared::{
     ConnectionSettingsInput, ConnectionSettingsStatus, NotificationConnection,
@@ -35,6 +36,7 @@ const TEST: &str = "/api/admin/notifications/test";
 /// The ntfy connection wiring left on the server.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NtfyWired {
+    /// The connection's id on the server.
     pub id: i64,
     /// False when an earlier wiring's connection was updated instead.
     pub created: bool,
@@ -75,26 +77,36 @@ pub(super) async fn wire(
     })
 }
 
-/// The id of the connection an earlier wiring saved, if any. Refuses when the only
-/// connections of the mock's name are someone else's.
+/// The id of the connection an earlier wiring saved, if any. Refuses when the connections
+/// of the mock's name are all someone else's, or when more than one looks like the mock's,
+/// since which one to keep is not the mock's to decide.
 fn ours(connections: &[NotificationConnection]) -> Result<Option<i64>, WireError> {
-    let mut named = connections
+    let named: Vec<_> = connections
         .iter()
         .filter(|c| c.name == CONNECTION_NAME)
-        .peekable();
-    if named.peek().is_none() {
+        .collect();
+    if named.is_empty() {
         return Ok(None);
     }
-    named
-        .find(|c| is_mock_address(&c.settings))
-        .map(|c| Some(c.id))
-        .ok_or(WireError::NotificationNameTaken(CONNECTION_NAME))
+    let mine: Vec<i64> = named
+        .iter()
+        .filter(|c| is_the_mocks(&c.settings))
+        .map(|c| c.id)
+        .collect();
+    match mine[..] {
+        [] => Err(WireError::NotificationNameTaken(CONNECTION_NAME)),
+        [id] => Ok(Some(id)),
+        _ => Err(WireError::NotificationNameRepeated(CONNECTION_NAME)),
+    }
 }
 
-/// Whether `settings` publish to a fake ntfy on this machine.
-fn is_mock_address(settings: &ConnectionSettingsStatus) -> bool {
+/// Whether `settings` are the mock's own: a fake ntfy on this machine, signed in with a
+/// saved token, as the request wiring checks the saved login.
+fn is_the_mocks(settings: &ConnectionSettingsStatus) -> bool {
     let ConnectionSettingsStatus::Ntfy(ntfy) = settings;
-    is_loopback(&ntfy.server_url)
+    ntfy.auth == NtfyAuth::Token
+        && ntfy.token_set
+        && is_loopback(&ntfy.server_url)
         && reqwest::Url::parse(&ntfy.server_url)
             .is_ok_and(|url| url.path().trim_end_matches('/').ends_with(PATH))
 }

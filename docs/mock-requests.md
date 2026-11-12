@@ -46,8 +46,9 @@ just mock-requests --local     # prints MOCK_REQUESTS_READY port=… downloads=�
 the mock as the Prowlarr and download client connections (the client's folder
 and the server's are both the downloads folder), and has the server test both.
 Then it saves the `Mock ntfy` notification connection
-([Notifications](#notifications-ntfy)) and has the server send it a test. It
-stays pointed at the mock after the mock exits. It **refuses** to run when the
+([Notifications](#notifications-ntfy)) and has the server send it a test; if that
+fails it prints a `warning:` line saying why and serves on, since the request
+connections are already saved. It stays pointed at the mock after the mock exits. It **refuses** to run when the
 server already points Prowlarr or the download client at anything but a previous
 mock wiring (on this machine, with the login `mock` and the mock's key), loopback
 included, because the settings read masks secrets and a real service's could not be
@@ -66,7 +67,9 @@ commit it). A `test_data` folder elsewhere is fine. Point the library elsewhere,
 
 Without `--local` or `--server`, the mock just serves and you enter its address
 and the key in Settings, Requests yourself, and the ntfy connection's server URL
-and token in the admin notification settings.
+and token under Administration › Notifications (`/admin?section=notifications`) on
+the web, You › Server settings › Notifications on iOS, or
+`POST /api/admin/notifications/connections`.
 
 | Flag | Default | Does |
 |---|---|---|
@@ -91,7 +94,7 @@ Plain JSON over HTTP, no auth, on the same port.
 | `PUT /_mock/search` | `{"mode": "results" \| "empty" \| "fail"}` | what a search answers: the catalogue, an empty list, or an HTTP 500 |
 | `PUT /_mock/downloads` | `{"outcome"?: "complete" \| "stall" \| "fail" \| "junk", "secs"?: n}` | applies to every unfinished download and every later one; a field left out keeps its value |
 | `GET /_mock/ntfy` | | what publishes are answered with (`fail`, `times`, `retry_after`) and every publish kept, oldest first (`messages`) |
-| `PUT /_mock/ntfy` | `{"fail": "server_error" \| "rate_limited" \| "unauthorized" \| null, "times"?: n, "retry_after"?: secs}` | answers the next `n` publishes (every one, without `times`) with a 500, a 429 or a 401, with `Retry-After: secs` when given; `{"fail": null}` answers normally again |
+| `PUT /_mock/ntfy` | `{"fail": "server_error" \| "rate_limited" \| "unauthorized" \| null, "times"?: n, "retry_after"?: secs}` | replaces the whole forcing state: the next `n` publishes (every one, without `times`) are answered with a 500, a 429 or a 401, with `Retry-After: secs` when given; `{"fail": null}` alone answers normally again. `fail` is required, and `times` or `retry_after` without a failure is refused `422` |
 | `DELETE /_mock/ntfy` | | forgets every publish kept; a forced failure stays |
 
 `GET /_mock` also carries `ntfy`: the same `fail`, `times` and `retry_after`, and
@@ -127,23 +130,32 @@ already finished is not touched by either.
 `http://127.0.0.1:<port>/ntfy` (a sub-path, as an ntfy behind a reverse proxy has),
 topic `omnibus-requests`, token sign-in with `tk_mock-requests`, priority 4, the tag
 `books`, and the event "a request needs a version picked". A later run updates that
-connection in place, whatever port the mock had then. It **refuses** to run when a
-connection named `Mock ntfy` exists that is not on this machine with a path ending
-in `/ntfy`: rename or delete that one first. The server's test send is the first
-message the mock records.
+connection in place, whatever port the mock had then, sending the token again: the
+server keeps a saved token only for the address it was saved for. The mock's own
+connection is the one named `Mock ntfy` on this machine, with a path ending in
+`/ntfy` and token sign-in with a token saved. A connection of that name that isn't,
+or two that are, are left alone and the wiring says so in its `warning:` line:
+rename or delete the one that is in the way and run it again. The server's test
+send is the first message the mock records, so look past `messages[0]` for a
+request's.
 
 The fake takes ntfy's JSON publishing (a body of `topic`, `title`, `message`,
-`priority`, `tags` and `click`), the form the server sends. A publish is accepted
-only when it signs in with `Bearer tk_mock-requests` or basic `mock` / `mock`;
-anything else, no sign-in included, is refused `401` with ntfy's error body,
-`{"code":40101,"http":401,"error":"unauthorized"}`. A body that is not publish JSON,
-or has no valid topic, is refused `400` in the same shape. A success answers `200`
-with the message back and its `id`.
+`priority`, `tags` and `click`), the form the server sends, and answers as an ntfy
+that requires sign-in would. A publish is accepted only when it signs in with
+`Bearer tk_mock-requests` or basic `mock` / `mock`. One with no sign-in is refused
+`403` with ntfy's error body, `{"code":40301,"http":403,"error":"forbidden"}`; one
+with any other sign-in is refused `401`,
+`{"code":40101,"http":401,"error":"unauthorized"}`. A body that is not publish
+JSON or has a field of the wrong type (`40017`), has no valid topic (`40009`), or
+has a priority outside 0 to 5 (`40007`) is refused `400` in the same shape. A
+success answers `200` with the message back and its `id`.
 
 Every publish is kept, refused ones too, up to the newest 200: its `id`, `at`
 (Unix seconds), the `status` it was answered with, the refusal's `error`, the
 `auth` it carried (`scheme`: `bearer`, `basic`, `none` or `other`; `matched`; and
 the raw `header`), and `topic`, `title`, `message`, `priority`, `tags` and `click`.
+A refused body keeps every field that could be read: a priority of 300 is recorded
+as 300, and only a field of the wrong type is left `null`.
 
 With `M` and `put` from [Reach each state](#reach-each-state):
 
@@ -152,25 +164,30 @@ curl -s $M/_mock/ntfy | jq '.messages[-1]'              # the latest publish
 put /_mock/ntfy '{"fail":"unauthorized","times":1}'     # refuse the next publish with a 401
 put /_mock/ntfy '{"fail":"rate_limited","retry_after":120}'  # 429s until reset
 put /_mock/ntfy '{"fail":"server_error","times":3}'     # 500 the next three
-put /_mock/ntfy '{"fail":null}'                          # answer normally again
+put /_mock/ntfy '{"fail":null}'                          # answer normally again (the whole body)
 curl -s -X DELETE $M/_mock/ntfy                          # forget what was kept
 ```
 
 To see a real notification, sign in as a reader who may ask for books but not pick
-versions (Admin, People: **Ask for books** on, **Pick versions** off) and request a
-book. When the search reaches Choose a version the server queues the notification
-and sends it within seconds; it shows in `/_mock/ntfy` with the book in `message` and,
-when a public server URL is set, `click` pointing at `/requests?book=<uuid>`. An
-admin's own requests, or those of a reader who may pick, send nothing.
+versions (Administration › People: **Ask for books** on, **Pick versions** off) and
+request a book. When the search reaches Choose a version the server queues the
+notification and sends it within seconds; it shows in `/_mock/ntfy` with the book in
+`message` and, when a public server URL is set, `click` pointing at
+`/requests?book=<uuid>`. An admin's own requests, or those of a reader who may pick,
+send nothing.
 
 What the server does with a forced failure:
 
 - **500 or 429**: it tries again, 30 seconds after the first try and doubling up to
-  an hour, or after the `Retry-After` when that is longer; the eighth failed try
-  gives up. Each try shows in `/_mock/ntfy` with its status.
-- **401**: it gives up at once. The connection's last delivery (in the admin
-  notification settings, and `GET /api/admin/notifications/connections`) shows it
-  failed, with the mock's answer as the reason.
+  an hour, or after the `Retry-After` when that is longer: about five hours in all,
+  as the twelfth failed try gives up. Each try shows in `/_mock/ntfy` with its status.
+- **401 (or 403)**: it gives up at once. The connection's last delivery shows it
+  failed, with the mock's answer as the reason: under Administration › Notifications
+  on the web, You › Server settings › Notifications on iOS, and in
+  `GET /api/admin/notifications/connections`.
+- A notification still waiting for a retry is dropped unsent, and leaves no failed
+  last delivery, when its connection is turned off or its request is picked,
+  cancelled or restarted meanwhile.
 - A test send, wiring's own included, reports the mock's answer at once and never
   changes the last delivery.
 

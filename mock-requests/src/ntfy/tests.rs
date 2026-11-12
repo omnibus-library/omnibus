@@ -3,11 +3,14 @@
 
 use omnibus_db::notify::{self, DeliverError, Drained, Event};
 use omnibus_db::pool::init_db;
-use omnibus_db::requests::store;
+use omnibus_db::requests::prowlarr::ProwlarrRelease;
+use omnibus_db::requests::rank::Ranked;
+use omnibus_db::requests::store::{self, SearchOutcome};
 use omnibus_db::set_public_url;
 use omnibus_db::test_support::seed_user;
 use omnibus_shared::{
-    NotificationConnectionInput, NotificationEvent, NotificationLastDelivery, NtfyAuth, RequestKind,
+    NotificationConnectionInput, NotificationEvent, NotificationLastDelivery, NtfyAuth,
+    ReleaseProtocol, RequestKind,
 };
 use serde_json::{json, Value};
 use sqlx::SqlitePool;
@@ -103,13 +106,11 @@ async fn publish_accepts_the_fake_clients_login_over_basic_auth() {
 }
 
 #[tokio::test]
-async fn publish_refuses_a_missing_or_wrong_sign_in_with_a_401_the_server_does_not_retry() {
-    let cases = [
+async fn publish_refuses_a_wrong_sign_in_with_a_401_the_server_does_not_retry() {
+    for (auth, secret, scheme) in [
         (NtfyAuth::Token, "tk_wrong", "bearer"),
         (NtfyAuth::Basic, "wrong", "basic"),
-        (NtfyAuth::None, "", "none"),
-    ];
-    for (auth, secret, scheme) in cases {
+    ] {
         let mock = spawn().await;
 
         let err = send_sample(&ntfy_settings(&mock, auth, secret))
@@ -131,6 +132,30 @@ async fn publish_refuses_a_missing_or_wrong_sign_in_with_a_401_the_server_does_n
             "{scheme}: the refusal keeps what was sent"
         );
     }
+}
+
+#[tokio::test]
+async fn publish_refuses_a_publish_with_no_sign_in_with_a_403_the_server_does_not_retry() {
+    let mock = spawn().await;
+
+    let err = send_sample(&ntfy_settings(&mock, NtfyAuth::None, ""))
+        .await
+        .unwrap_err();
+
+    assert!(
+        matches!(&err, DeliverError::Permanent { message }
+            if message.contains("403") && message.contains("40301")),
+        "{err:?}"
+    );
+    let got = first(&mock).await;
+    assert_eq!(
+        (&got["status"], &got["error"]),
+        (&json!(403), &json!("forbidden"))
+    );
+    assert_eq!(
+        got["auth"],
+        json!({"scheme": "none", "matched": false, "header": null})
+    );
 }
 
 #[tokio::test]
@@ -162,6 +187,35 @@ async fn publish_answers_400_for_a_missing_or_invalid_topic() {
         assert_eq!(reply.status(), 400, "{body}");
         let refusal: Value = reply.json().await.unwrap();
         assert_eq!(refusal["code"], 40009, "{body}");
+    }
+}
+
+#[tokio::test]
+async fn publish_records_the_readable_fields_of_a_body_it_refuses() {
+    let cases = [
+        (
+            json!({"topic": "omnibus", "title": "Hi", "priority": 300}),
+            40007,
+            json!({"topic": "omnibus", "title": "Hi", "priority": 300}),
+        ),
+        (
+            json!({"topic": "omnibus", "title": 5, "tags": ["books"]}),
+            40017,
+            json!({"topic": "omnibus", "title": null, "tags": ["books"]}),
+        ),
+    ];
+    for (body, code, readable) in cases {
+        let mock = spawn().await;
+
+        let reply = post(&mock, "/ntfy", &body.to_string()).await;
+
+        assert_eq!(reply.status(), 400, "{body}");
+        let refusal: Value = reply.json().await.unwrap();
+        assert_eq!(refusal["code"], code, "{body}");
+        let got = first(&mock).await;
+        for (field, value) in readable.as_object().unwrap() {
+            assert_eq!(&got[field], value, "{body}: {field}");
+        }
     }
 }
 
@@ -198,29 +252,66 @@ fn record_keeps_only_the_newest_publishes_past_the_bound() {
     assert_eq!(inbox.received()[0].id, "mock00000006");
 }
 
-/// An in-memory database with an ntfy connection to `mock`'s fake and one notification
-/// queued for it, of a reader's request; returns the pool and the connection's id.
-async fn queued(mock: &Running) -> (SqlitePool, i64) {
-    let pool = init_db("sqlite::memory:").await.unwrap();
-    set_public_url(&pool, Some(PUBLIC_URL)).await.unwrap();
-    let input = NotificationConnectionInput {
+/// An enabled connection to `mock`'s fake, sent the request event.
+fn connection(mock: &Running) -> NotificationConnectionInput {
+    NotificationConnectionInput {
         name: "Mock ntfy".to_string(),
         enabled: true,
         events: vec![NotificationEvent::RequestNeedsChooser],
         settings: ntfy_input(mock, NtfyAuth::Token, NTFY_TOKEN),
-    };
-    let connection = notify::create_connection(&pool, &input).await.unwrap();
+    }
+}
+
+/// One version on offer, as the search ranks it.
+fn version() -> Ranked {
+    Ranked {
+        release: ProwlarrRelease {
+            guid: "mock-1".to_string(),
+            title: "Dune Frank Herbert EPUB".to_string(),
+            size_bytes: Some(1),
+            seeders: Some(1),
+            protocol: Some(ReleaseProtocol::Torrent),
+            info_url: None,
+            indexer: Some("Mock".to_string()),
+            link: "magnet:?xt=urn:btih:00".to_string(),
+            categories: vec![7020],
+            files: Some(1),
+        },
+        format: Some("EPUB".to_string()),
+        score: 1.0,
+        best_match: true,
+        rejected: false,
+        cause: None,
+    }
+}
+
+/// An in-memory database with an ntfy connection to `mock`'s fake, and a reader's request
+/// whose search reached "Choose a version", which queued one notification for it. Returns
+/// the pool and the connection's id.
+async fn queued(mock: &Running) -> (SqlitePool, i64) {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    set_public_url(&pool, Some(PUBLIC_URL)).await.unwrap();
+    let saved = notify::create_connection(&pool, &connection(mock))
+        .await
+        .unwrap();
     let reader = seed_user(&pool, "reader").await;
     let started = store::start(&pool, reader, BOOK_UUID, RequestKind::Ebook, 10)
         .await
         .unwrap();
-    let mut conn = pool.acquire().await.unwrap();
-    let queued = notify::enqueue_request_needs_chooser(&mut conn, started.request.id, None)
+    let found = SearchOutcome::Found(vec![version()]);
+    store::finish_search(&pool, started.request.id, found)
         .await
         .unwrap();
-    assert_eq!(queued, 1);
-    drop(conn);
-    (pool, connection.id)
+    assert_eq!(outbox(&pool).await.len(), 1);
+    (pool, saved.id)
+}
+
+/// Every outbox row's state, attempts and last error, oldest first.
+async fn outbox(pool: &SqlitePool) -> Vec<(String, i64, Option<String>)> {
+    sqlx::query_as("SELECT state, attempts, last_error FROM notification_deliveries ORDER BY id")
+        .fetch_all(pool)
+        .await
+        .unwrap()
 }
 
 async fn drain(pool: &SqlitePool) -> Drained {
@@ -263,15 +354,10 @@ async fn drain_due_keeps_a_notification_queued_with_its_error_after_a_forced_500
     let drained = drain(&pool).await;
 
     assert_eq!(drained.retrying, 1);
-    let (state, attempts, error): (String, i64, Option<String>) = sqlx::query_as(
-        "SELECT state, attempts, last_error FROM notification_deliveries WHERE connection_id = ?",
-    )
-    .bind(id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!((state.as_str(), attempts), ("queued", 1));
-    assert!(error.unwrap().contains("500"));
+    let rows = outbox(&pool).await;
+    let (state, attempts, error) = &rows[0];
+    assert_eq!((state.as_str(), *attempts), ("queued", 1));
+    assert!(error.as_deref().unwrap().contains("500"));
     assert_eq!(first(&mock).await["status"], 500);
     assert!(last_delivery(&pool, id).await.is_none());
 }
@@ -293,4 +379,40 @@ async fn drain_due_fails_a_notification_the_fake_refuses_with_a_401_and_shows_wh
     let last = last_delivery(&pool, id).await.unwrap();
     assert!(!last.ok);
     assert!(last.error.unwrap().contains("401 Unauthorized"));
+}
+
+#[tokio::test]
+async fn drain_due_drops_a_pending_retry_unsent_once_the_connection_is_turned_off() {
+    let mock = spawn().await;
+    control(
+        &mock,
+        "/_mock/ntfy",
+        json!({"fail": "server_error", "times": 1}),
+    )
+    .await;
+    let (pool, id) = queued(&mock).await;
+    drain(&pool).await;
+    let off = NotificationConnectionInput {
+        enabled: false,
+        ..connection(&mock)
+    };
+    notify::update_connection(&pool, id, &off).await.unwrap();
+    // The retry is due in 30 seconds; bring it forward.
+    sqlx::query("UPDATE notification_deliveries SET next_attempt_at = 0")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let drained = drain(&pool).await;
+
+    assert_eq!(drained.dropped, 1);
+    assert!(outbox(&pool).await.is_empty());
+    assert!(last_delivery(&pool, id).await.is_none());
+    assert_eq!(
+        ntfy_record(&mock).await["messages"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
 }
