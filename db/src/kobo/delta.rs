@@ -41,16 +41,6 @@ impl SyncDelta {
     }
 }
 
-/// The server's clock in whole seconds, the second `state_updated_at` is clamped to. Read it
-/// just before the states a response carries, and hand it to [`record_synced`] as `read_at`.
-pub async fn server_second(pool: &SqlitePool) -> Result<i64, KoboError> {
-    Ok(
-        sqlx::query_scalar("SELECT CAST(strftime('%s','now') AS INTEGER)")
-            .fetch_one(pool)
-            .await?,
-    )
-}
-
 /// Compute what `device_id` still needs, given `user_id`'s opted-in books.
 /// This plain delta is read-only. [`record_synced`] advances the snapshot once the entitlements
 /// are written to the response, so a device that drops the connection mid-body sees the same
@@ -144,7 +134,7 @@ const STATE_CHUNK_SIZE: usize = 450;
 /// Advance the device's snapshot to match `changes`: upsert the adds and
 /// changes at the `last_modified` they were sent at, clearing any resend mark, and drop the
 /// removals. `delivered` holds the states the response carried and `read_at` the server second
-/// they were read in ([`server_second`]). Each book's watermark is its state's
+/// they were read in ([`super::reading_state_read`]). Each book's watermark is its state's
 /// `state_updated_at`, one less when that is `read_at`, so a save later in that second is
 /// announced again on the next request within it (at most about a second of repeats), then
 /// settles. Call only after the response body is committed to; see [`sync_delta`].

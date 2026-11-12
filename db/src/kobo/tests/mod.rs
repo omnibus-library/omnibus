@@ -523,6 +523,42 @@ async fn reading_state_for_returns_status_and_position_per_book() {
 }
 
 #[tokio::test]
+async fn reading_state_read_reports_a_clock_no_earlier_than_any_stamp_it_returned() {
+    // The clock comes from the statement that read the states, so a state saved a tick before
+    // it can never be stamped later than the second it is reported as read in.
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = make_user(&pool, "reader").await;
+    let uuid = seed_synced_ebook(&pool, "dune.epub", "Dune", "Herbert").await;
+    let now: i64 = sqlx::query_scalar("SELECT CAST(strftime('%s','now') AS INTEGER)")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    crate::test_support::place_position(&pool, user, &uuid, 40, now).await;
+
+    let (states, read_at) = reading_state_read(&pool, user, std::slice::from_ref(&uuid))
+        .await
+        .unwrap();
+
+    assert_eq!(states[&uuid].state_updated_at, now);
+    assert!(read_at >= now, "read at {read_at}, state stamped {now}");
+}
+
+#[tokio::test]
+async fn reading_state_read_returns_no_clock_for_books_without_a_state() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = make_user(&pool, "reader").await;
+    let uuid = seed_synced_ebook(&pool, "dune.epub", "Dune", "Herbert").await;
+
+    let (states, read_at) = reading_state_read(&pool, user, &[uuid]).await.unwrap();
+
+    assert!(states.is_empty());
+    assert_eq!(
+        read_at, 0,
+        "nothing was read, so nothing needs holding back"
+    );
+}
+
+#[tokio::test]
 async fn reading_state_for_reports_the_status_and_progress_clocks_separately() {
     // Kobo sync-out stamps `StatusInfo` and `CurrentBookmark` from their own
     // rows, so each clock has to survive the join un-MAXed — the envelope's

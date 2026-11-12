@@ -82,7 +82,10 @@ async fn page_states(
 
 /// The server's clock in whole seconds, the one `state_updated_at` is clamped to.
 async fn server_now(pool: &SqlitePool) -> i64 {
-    server_second(pool).await.unwrap()
+    sqlx::query_scalar("SELECT CAST(strftime('%s','now') AS INTEGER)")
+        .fetch_one(pool)
+        .await
+        .unwrap()
 }
 
 /// Drive one full sync: compute the delta, then commit it with the states it delivered.

@@ -99,13 +99,10 @@ async fn load_sync_page_states(
             db::kobo::SyncChange::Removed { .. } => None,
         })
         .collect();
-    // Before the states, so a save in this second is never older than `read_at`.
-    let read_at = db::kobo::server_second(state.pool())
+    // `read_at` comes from the statement that read the states, so none is stamped after it.
+    let (mut states, read_at) = db::kobo::reading_state_read(state.pool(), user_id, &page_uuids)
         .await
-        .map_err(|e| internal("kobo server_second", e))?;
-    let mut states = db::kobo::reading_state_for(state.pool(), user_id, &page_uuids)
-        .await
-        .map_err(|e| internal("kobo reading_state_for", e))?;
+        .map_err(|e| internal("kobo reading_state_read", e))?;
     enrich_states_with_derived_spans(state, user_id, changes, &mut states).await;
     Ok(PageStates { states, read_at })
 }
