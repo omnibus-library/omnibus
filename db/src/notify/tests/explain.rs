@@ -58,3 +58,19 @@ fn provider_error_refuses_a_reason_that_echoes_a_secret() {
 
     assert_eq!(provider_error(&body, &["hunter".to_string()]), None);
 }
+
+#[test]
+fn provider_error_refuses_an_echoed_secret_its_trimming_would_cut_short() {
+    for (error, secret) in [
+        ("wrong password hunter2.", "hunter2."),
+        ("wrong password pass word ", "pass word "),
+    ] {
+        let body = serde_json::json!({ "error": error }).to_string();
+
+        assert_eq!(
+            provider_error(&body, &[secret.to_string()]),
+            None,
+            "{error:?}"
+        );
+    }
+}

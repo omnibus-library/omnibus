@@ -65,17 +65,20 @@ pub fn unreachable(provider: &str, why: Unreachable) -> String {
 
 /// A provider's own reason from a body that is a JSON object with a string `error`, when
 /// it is a short plain phrase: at most 80 letters, digits, spaces and `,.'-`, its trailing
-/// period trimmed. `None` for anything else, and for a phrase holding any of `secrets`.
+/// period trimmed. `None` for anything else, and for an `error` holding any of `secrets`.
 pub fn provider_error(body: &str, secrets: &[String]) -> Option<String> {
     let value: serde_json::Value = serde_json::from_str(body).ok()?;
-    let reason = value.get("error")?.as_str()?.trim();
+    let raw = value.get("error")?.as_str()?;
+    let reason = raw.trim();
     let reason = reason.strip_suffix('.').unwrap_or(reason);
     let plain = |c: char| c.is_ascii_alphanumeric() || matches!(c, ' ' | ',' | '.' | '\'' | '-');
     let fits = !reason.is_empty()
         && reason.chars().count() <= PROVIDER_ERROR_MAX_CHARS
         && reason.chars().all(plain);
+    // Checked before trimming: a secret ending in a space or a period, echoed last, would
+    // otherwise be quoted all but its end. The quoted text is part of `raw`, so this covers it.
     let echoes_a_secret = secrets
         .iter()
-        .any(|secret| !secret.is_empty() && reason.contains(secret.as_str()));
+        .any(|secret| !secret.is_empty() && raw.contains(secret.as_str()));
     (fits && !echoes_a_secret).then(|| reason.to_string())
 }
