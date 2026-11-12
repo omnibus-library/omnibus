@@ -13,9 +13,9 @@ use crate::rate_limit::{rate_limit_by_ip, RateLimiter, RateLimits};
 use super::{
     account, account_kosync, admin_health, admin_sessions, audiobooks, author_photos, authors,
     bookmarks, cleanup, cover_palette, covers, cross_format, deletion, ebooks, genres, highlights,
-    journals, kindle, kobo_devices, logs, merge, metadata, overrides, physical, profile, progress,
-    ratings, read_status, requests, requests_admin, reviews, scan, search, series, settings,
-    shelves, stats, suggestions, summary, tags, tasks, uploads, users, AppState,
+    journals, kindle, kobo_devices, logs, merge, metadata, notifications, overrides, physical,
+    profile, progress, ratings, read_status, requests, requests_admin, reviews, scan, search,
+    series, settings, shelves, stats, suggestions, summary, tags, tasks, uploads, users, AppState,
 };
 
 /// Health check, settings, ebooks, and audiobook playback routes.
@@ -29,6 +29,7 @@ pub(super) fn content_routes() -> OpenApiRouter<AppState> {
             settings::get_ebook_convert,
             settings::post_ebook_convert
         ))
+        .routes(routes!(settings::get_public_url, settings::post_public_url))
         .routes(routes!(
             settings::get_metadata_precedence,
             settings::post_metadata_precedence
@@ -111,6 +112,7 @@ pub(super) fn data_routes(
         .merge(kindle_routes())
         .merge(request_admin_routes())
         .merge(request_routes())
+        .merge(notification_routes())
         .merge(kobo_device_routes())
 }
 
@@ -390,6 +392,22 @@ fn request_admin_routes() -> OpenApiRouter<AppState> {
         ))
         .routes(routes!(requests_admin::post_test_indexer))
         .routes(routes!(requests_admin::post_test_client))
+}
+
+/// The admin's notification connections. Not behind the book-requests flag: connections
+/// are general, and the flag only decides which events the list offers.
+fn notification_routes() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(
+            notifications::list_connections,
+            notifications::create_connection
+        ))
+        .routes(routes!(
+            notifications::update_connection,
+            notifications::set_connection_enabled,
+            notifications::delete_connection
+        ))
+        .routes(routes!(notifications::post_test))
 }
 
 /// The signed-in reader's Kobo devices and KOReader progress-sync password.

@@ -46,6 +46,7 @@ mod kosync;
 mod logs;
 mod merge;
 mod metadata;
+mod notifications;
 mod opds;
 pub mod openapi;
 mod overrides;

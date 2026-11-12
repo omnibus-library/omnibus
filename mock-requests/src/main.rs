@@ -8,6 +8,8 @@ use anyhow::Context;
 
 use omnibus_mock_requests::catalogue::Payloads;
 use omnibus_mock_requests::cli::{self, Command, Target, RUNTIME_DIR};
+use omnibus_mock_requests::ntfy::PATH as NTFY_PATH;
+use omnibus_mock_requests::wire::ntfy::CONNECTION_NAME;
 use omnibus_mock_requests::wire::{self, SEED_USER_ENV};
 use omnibus_mock_requests::{router, Mock};
 
@@ -52,8 +54,23 @@ async fn main() -> anyhow::Result<()> {
             Target::Server(origin) => origin.clone(),
         };
         let seed = std::env::var(SEED_USER_ENV).ok();
-        wire::wire(&omnibus, seed.as_deref(), &origin, args.client, &downloads).await?;
+        let wired = wire::wire(&omnibus, seed.as_deref(), &origin, args.client, &downloads).await?;
         eprintln!("wired {omnibus} to the mock ({})", args.client.as_str());
+        match wired.ntfy {
+            Ok(ntfy) => {
+                let saved = if ntfy.created { "created" } else { "updated" };
+                eprintln!(
+                    "wired {omnibus}'s ntfy connection \"{CONNECTION_NAME}\" (id {}, {saved}) \
+                     to {origin}{NTFY_PATH}; read what it sends at {origin}/_mock/ntfy",
+                    ntfy.id
+                );
+            }
+            // Notifications are an extra: the request wiring stands and the mock serves on.
+            Err(why) => eprintln!(
+                "warning: the ntfy connection was not wired ({why}); requests work, and the \
+                 fake ntfy still answers at {origin}{NTFY_PATH}"
+            ),
+        }
     }
     println!(
         "MOCK_REQUESTS_READY port={port} downloads={} pid={}",

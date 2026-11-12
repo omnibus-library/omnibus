@@ -261,6 +261,43 @@ impl Default for EbookConvertStatus {
     }
 }
 
+/// Maximum byte length of the public server URL.
+pub const PUBLIC_URL_MAX_LEN: usize = 2048;
+
+/// The public server URL to save.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct PublicUrlUpdate {
+    /// The address readers reach the server at, such as `https://books.example.com`: an
+    /// absolute `http` or `https` URL of up to 2048 bytes, with no username, password,
+    /// query or fragment. A path is kept, for a server under a sub-path such as
+    /// `https://example.com/omnibus`, and a trailing slash is dropped. Null or blank clears
+    /// the saved URL.
+    pub url: Option<String>,
+}
+
+/// Where the public server URL in effect comes from: `settings` when saved through the
+/// API, `env` when read from the server's `OMNIBUS_PUBLIC_URL` environment variable
+/// because none is saved, or `none` when neither is set.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum PublicUrlSource {
+    Settings,
+    Env,
+    None,
+}
+
+/// The address readers reach the server at, for links the server sends outside the app.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct PublicUrlStatus {
+    /// The public URL in effect, with no trailing slash. Null when none is set.
+    pub url: Option<String>,
+    /// Where `url` comes from.
+    pub source: PublicUrlSource,
+}
+
 /// Amazon Send-to-Kindle email size limit: Amazon rejects personal-document
 /// emails over 50 MB, while the web / app uploader at [`KINDLE_WEB_UPLOAD_URL`]
 /// accepts up to 200 MB. An EPUB over the email cap disables the email button

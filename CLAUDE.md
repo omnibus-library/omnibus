@@ -58,7 +58,7 @@ Do not use Chrome DevTools MCP or Claude in Chrome for routine agent verificatio
 
 ## Architecture
 
-Six-crate Cargo workspace: `shared/` (serde wire types), `db/` (data layer + indexer), `server/` (the `omnibus` axum binary: the REST router, the device-sync routes, and the React build served at `/` from `OMNIBUS_REACT_DIR`), `mcp/` (MCP tool layer speaking the `/api/*` REST surface — a stdio binary plus the library `server/` mounts at the hosted `/mcp` endpoint behind an admin toggle; out of default-members), `mock-kobo/` (a fake Kobo e-reader that syncs against the Kobo routes to reproduce firmware-side bugs; dev tooling, also out of default-members), `mock-requests/` (a fake Prowlarr plus fake qBittorrent, Transmission, SABnzbd and NZBGet on one loopback port, so a book request runs end to end without real services; dev tooling, also out of default-members — [docs/mock-requests.md](docs/mock-requests.md)).
+Six-crate Cargo workspace: `shared/` (serde wire types), `db/` (data layer + indexer), `server/` (the `omnibus` axum binary: the REST router, the device-sync routes, and the React build served at `/` from `OMNIBUS_REACT_DIR`), `mcp/` (MCP tool layer speaking the `/api/*` REST surface — a stdio binary plus the library `server/` mounts at the hosted `/mcp` endpoint behind an admin toggle; out of default-members), `mock-kobo/` (a fake Kobo e-reader that syncs against the Kobo routes to reproduce firmware-side bugs; dev tooling, also out of default-members), `mock-requests/` (a fake Prowlarr plus fake qBittorrent, Transmission, SABnzbd, NZBGet and ntfy on one loopback port, so a book request and its notification run end to end without real services; dev tooling, also out of default-members — [docs/mock-requests.md](docs/mock-requests.md)).
 
 The web client is `frontend-js/`, a React SPA (Vite + pnpm) whose API client is generated from the OpenAPI document; its own checks are biome, tsc and vitest (unit + Storybook), run by `frontend-js.yml`.
 
@@ -103,7 +103,7 @@ just dev-up
 just dev-bounce                                             # restart it — after any Rust change or a new migration
 source .claude/runtime/env.sh                               # picks up OMNIBUS_PORT + PLAYWRIGHT_BASE_URL
 just kobo                                                   # mock Kobo e-reader in a terminal UI against any instance (sync URL; `--local` for this worktree's dev server) (docs/kobo.md)
-just mock-requests --local                                 # fake Prowlarr + download clients wired to this worktree's dev server for book requests (needs OMNIBUS_BOOK_REQUESTS=1; docs/mock-requests.md)
+just mock-requests --local                                 # fake Prowlarr + download clients + ntfy wired to this worktree's dev server for book requests (needs OMNIBUS_BOOK_REQUESTS=1; docs/mock-requests.md)
 just koreader                                              # interactive KOReader in a browser tab (Docker) against any instance (plugin zip; `--local` for this worktree's dev server) (docs/koreader.md)
 
 # Server by hand: binds $IP:$PORT (127.0.0.1:8080 unset); serves the React
@@ -128,7 +128,7 @@ cargo test -p omnibus-db                                    # db + scanner + syn
 cargo test -p omnibus-shared                                # shared serde / ebook / progress tests
 cargo test -p omnibus-mcp                                   # MCP tool-layer tests (crate is out of default-members)
 cargo test -p omnibus-mock-kobo                             # fake Kobo firmware tests (crate is out of default-members)
-cargo nextest run -p omnibus-mock-requests                  # fake Prowlarr / download client tests (crate is out of default-members; nextest, not cargo test)
+cargo nextest run -p omnibus-mock-requests                  # fake Prowlarr / download client / ntfy tests (crate is out of default-members; nextest, not cargo test)
 cargo clippy                                                # lint default-members (server, shared)
 cargo fmt                                                   # format all crates
 

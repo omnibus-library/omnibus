@@ -69,6 +69,7 @@ final class DebugScreenLink {
         case "tags": return .tags
         case "genres": return .genres
         case "settings": return .settings
+        case "notifications": return .notifications
         case "goals": return .readingGoals
         case "stats-exclusions": return .statsExclusions
         case "downloads": return .downloads

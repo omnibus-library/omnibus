@@ -4,12 +4,14 @@
 //! while the request waits on the reader) hold in one place.
 
 use omnibus_shared::{
-    ExternalBookMeta, ReleaseProtocol, RequestKind, RequestState, RequestVersion, StuckReason,
+    EbookMetadata, ExternalBookMeta, ReleaseProtocol, RequestKind, RequestState, RequestVersion,
+    StuckReason,
 };
 use sqlx::{sqlite::SqliteRow, Row, SqlitePool};
 
 use crate::author_photos::RemoteImageConfig;
 use crate::metadata_lookup::provider_cover_image_config;
+use crate::notify;
 use crate::scan::{create_fileless_from_meta, fetch_candidate_cover};
 
 use super::rank::Ranked;
@@ -335,11 +337,18 @@ pub async fn versions(
 /// Record how a search ended, but only for a request still `looking`: one that was
 /// restarted, picked or answered meanwhile keeps its state. Versions given up earlier stay
 /// in the table and are not offered again; a search that finds nothing else ends `not_found`.
+/// A request that reaches `choose` for a reader who may not pick queues its notifications
+/// in the same transaction; a failure to queue them never holds the request back.
 pub async fn finish_search(
     pool: &SqlitePool,
     id: i64,
     outcome: SearchOutcome,
 ) -> Result<(), RequestError> {
+    // Read before the write lock, through the override-aware book read.
+    let book = match &outcome {
+        SearchOutcome::Found(_) => requested_book(pool, id).await,
+        SearchOutcome::Stuck { .. } => None,
+    };
     let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     let outcome = match outcome {
         SearchOutcome::Found(ranked) => without_given_up(&mut tx, id, ranked).await?,
@@ -367,6 +376,7 @@ pub async fn finish_search(
     if moved == 0 {
         return Ok(());
     }
+    let mut queued = 0;
     if let SearchOutcome::Found(ranked) = &outcome {
         sqlx::query("DELETE FROM book_request_results WHERE request_id = ? AND tried = 0")
             .bind(id)
@@ -375,9 +385,33 @@ pub async fn finish_search(
         for r in ranked {
             insert_result(&mut tx, id, r).await?;
         }
+        queued = notify::enqueue_request_needs_chooser(&mut tx, id, book.as_ref()).await;
     }
     tx.commit().await?;
+    if queued > 0 {
+        notify::kick();
+    }
     Ok(())
+}
+
+/// The book request `id` asks for, as readers see it, for its notification; `None` when
+/// either is gone. A failed read only costs the message its title, never the search.
+async fn requested_book(pool: &SqlitePool, id: i64) -> Option<EbookMetadata> {
+    let read = async {
+        let uuid: Option<String> =
+            sqlx::query_scalar("SELECT book_uuid FROM book_requests WHERE id = ?")
+                .bind(id)
+                .fetch_optional(pool)
+                .await?;
+        match uuid {
+            Some(uuid) => Ok(crate::get_book_by_uuid(pool, &uuid).await?),
+            None => Ok(None),
+        }
+    };
+    read.await.unwrap_or_else(|error: RequestError| {
+        tracing::warn!(%error, request = id, "read the requested book for its notification");
+        None
+    })
 }
 
 /// `ranked` without the releases this request already tried and gave up; `not_found` when none that

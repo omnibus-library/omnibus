@@ -50,6 +50,7 @@ pub mod metadata_lookup;
 pub mod metadata_overrides;
 pub mod missing_files;
 pub mod normalize;
+pub mod notify;
 pub mod palette;
 pub mod partial_md5;
 pub mod pdf;

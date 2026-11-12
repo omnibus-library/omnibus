@@ -45,6 +45,14 @@ struct DebugScreenLinkTests {
         #expect(route("omnibus://debug/screen/you/request") == nil)
     }
 
+    @Test func notificationsOpensOverServerSettings() {
+        #expect(
+            route("omnibus://debug/screen/you/settings/notifications")
+                == ScreenRoute(tab: .you, path: [.settings, .notifications])
+        )
+        #expect(!Destination.notifications.hidesTabBar)
+    }
+
     @Test func theRequestPageLeavesTheTabBarUp() {
         #expect(!Destination.bookRequest(uuid: "u-1").hidesTabBar)
     }

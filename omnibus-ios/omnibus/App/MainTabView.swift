@@ -24,6 +24,7 @@ enum Destination: Hashable {
     case genres
     case genre(name: String)
     case settings
+    case notifications
     case readingGoals
     case statsExclusions
     case downloads
@@ -420,6 +421,8 @@ struct DestinationRouter: ViewModifier {
                 SearchResultsView(facet: .genre, name: name)
             case .settings:
                 SettingsView()
+            case .notifications:
+                NotificationsView()
             case .readingGoals:
                 ReadingGoalsView()
             case .statsExclusions:

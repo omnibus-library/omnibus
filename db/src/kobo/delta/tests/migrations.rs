@@ -8,9 +8,9 @@ use super::*;
 /// Migration `0100`'s resend, read from the migration itself so the two cannot drift.
 const KOBO_RESEND: &str = include_str!("../../../../migrations/0100_kobo_resend_metadata.sql");
 
-/// Migration `0120`'s watermark shift, read from the migration itself like [`KOBO_RESEND`].
+/// Migration `0121`'s watermark shift, read from the migration itself like [`KOBO_RESEND`].
 const STATE_WATERMARK_SHIFT: &str =
-    include_str!("../../../../migrations/0120_kobo_state_watermark_shift.sql");
+    include_str!("../../../../migrations/0121_kobo_state_watermark_shift.sql");
 
 /// Migration `0103`'s backfill, read from the migration itself like [`KOBO_RESEND`].
 const POSITION_MARKS_READING: &str =

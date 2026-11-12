@@ -19,6 +19,7 @@ export * from "./api/journal";
 export * from "./api/kobo";
 export * from "./api/library";
 export * from "./api/metadata";
+export * from "./api/notifications";
 export * from "./api/physical";
 export * from "./api/reading";
 export * from "./api/requests";

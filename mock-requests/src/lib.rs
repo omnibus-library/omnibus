@@ -1,8 +1,8 @@
-//! A fake Prowlarr and fake download clients for the book-request pipeline, all on one
-//! port: their paths don't collide, so the server's request settings pick between
-//! qBittorrent, Transmission, SABnzbd and NZBGet by kind alone. Searches are answered
-//! from the query (see [`catalogue`]), and a control API under `/_mock` steers what the
-//! fakes report.
+//! A fake Prowlarr and fake download clients for the book-request pipeline, and a fake
+//! ntfy for the notifications it sends, all on one port: their paths don't collide, so the
+//! server's request settings pick between qBittorrent, Transmission, SABnzbd and NZBGet by
+//! kind alone. Searches are answered from the query (see [`catalogue`]), and a control API
+//! under `/_mock` steers what the fakes report and lists what the fake ntfy received.
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -14,6 +14,7 @@ pub mod catalogue;
 pub mod cli;
 pub mod control;
 pub mod downloads;
+pub mod ntfy;
 pub mod nzb;
 pub mod nzbget;
 pub mod prowlarr;
@@ -26,6 +27,7 @@ pub mod wire;
 
 use catalogue::Payloads;
 use downloads::Store;
+use ntfy::Inbox;
 
 /// The API key the fake Prowlarr accepts.
 pub const PROWLARR_API_KEY: &str = "mock-requests";
@@ -36,11 +38,15 @@ pub const CLIENT_USERNAME: &str = "mock";
 /// The password every fake client accepts, and SABnzbd's API key.
 pub const CLIENT_PASSWORD: &str = "mock";
 
+/// The access token the fake ntfy accepts, and what wiring saves.
+pub const NTFY_TOKEN: &str = "tk_mock-requests";
+
 /// Everything the fakes share.
 pub struct Mock {
     /// This mock's own address, such as `http://127.0.0.1:8123`, which usenet links point at.
     pub origin: String,
     store: Mutex<Store>,
+    ntfy: Mutex<Inbox>,
 }
 
 /// The handle every handler holds.
@@ -57,6 +63,7 @@ impl Mock {
         Arc::new(Self {
             origin,
             store: Mutex::new(Store::new(downloads, payloads, download_secs)),
+            ntfy: Mutex::default(),
         })
     }
 
@@ -71,6 +78,11 @@ impl Mock {
         store.refresh(Instant::now());
         store
     }
+
+    /// The fake ntfy's state, locked. A handler that panicked leaves it usable.
+    pub fn ntfy(&self) -> MutexGuard<'_, Inbox> {
+        self.ntfy.lock().unwrap_or_else(|e| e.into_inner())
+    }
 }
 
 /// Every fake and the control API.
@@ -82,6 +94,7 @@ pub fn router(mock: Shared) -> Router {
         .merge(nzb::routes())
         .merge(sabnzbd::routes())
         .merge(nzbget::routes())
+        .merge(ntfy::routes())
         .merge(control::routes())
         .with_state(mock)
 }
