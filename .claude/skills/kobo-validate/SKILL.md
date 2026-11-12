@@ -61,7 +61,7 @@ Then the **cross-client interleavings**, where one client changes one field and 
 
 - web marks **Unread**, then the device reads → the web shows `reading` again;
 - web moves the position, then the device changes the status (and the reverse): neither change erases the other;
-- a web change in the **same second** as a sync (known whole-second edge): report it if it fails, don't sleep it away.
+- a web change in the **same second** as a sync: the next sync announces it. Report it if it doesn't, and don't sleep it away. (Two writes in one second that straddle a page read can still slip.)
 
 ## 5. Clean up and report
 
