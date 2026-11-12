@@ -311,6 +311,54 @@ export const HouseholdRatingOpensTheReviewsTab: Story = {
   },
 };
 
+/** The pseudo-element each running animation targets, such as `::view-transition-new(bp-tab-page)`. */
+function transitionPseudos(): string[] {
+  return document
+    .getAnimations()
+    .map((animation) => (animation.effect as KeyframeEffect).pseudoElement)
+    .filter((pseudo): pseudo is string => pseudo !== null);
+}
+
+export const ManyReviewsLinkTurnsWithoutMorphingThePanel: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...reviewHandlers({
+        mine: aWireReview({ stars: 4 }),
+        others: Array.from({ length: 22 }, (_, i) =>
+          aWireOtherReview({ user_id: 100 + i, username: `reader-${i}` }),
+        ),
+      }),
+      ...bookDetailHandlers(BOOK),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "23 reviews" }),
+    );
+
+    // The old and new pages still turn, but the group is never animated: a morph from the
+    // Overview's height to the tall Reviews panel is the stretch this guards against.
+    await waitFor(() => {
+      const pseudos = transitionPseudos();
+      expect(pseudos).toContain("::view-transition-new(bp-tab-page)");
+      expect(pseudos).not.toContain("::view-transition-group(bp-tab-page)");
+    });
+    await waitFor(() =>
+      expect(canvas.getByRole("tab", { name: "Reviews" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      ),
+    );
+    await expect(canvas.getByRole("tab", { name: "Reviews" })).toHaveFocus();
+    const panel = canvas.getByRole("tabpanel", { name: "Reviews" });
+    await waitFor(() => {
+      const box = panel.getBoundingClientRect();
+      expect(box.top).toBeGreaterThanOrEqual(0);
+      expect(box.top).toBeLessThan(window.innerHeight);
+    });
+  },
+};
+
 const patches: (ReviewPatch | "delete")[] = [];
 
 export const AHeroTapShowsOnTheReviewsTabToo: Story = {

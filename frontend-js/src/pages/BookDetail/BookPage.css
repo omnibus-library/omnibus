@@ -1166,9 +1166,9 @@ button.bp-byline-series {
   animation: none;
   mix-blend-mode: normal;
 }
+/* Unanimated, the group follows the live panel, so it never morphs from the Overview's height to a tall panel. */
 ::view-transition-group(bp-tab-page) {
-  animation-duration: 440ms;
-  animation-timing-function: var(--ease-out);
+  animation: none;
 }
 ::view-transition-old(bp-tab-page) {
   animation: bp-page-out 240ms var(--ease-in) both;
