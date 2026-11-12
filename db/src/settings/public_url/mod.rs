@@ -6,6 +6,8 @@
 //! allowlist `auth::origin_check` reads. Every value is normalised before it is
 //! saved or used, so a link can append a path without doubling a slash.
 
+use std::sync::Mutex;
+
 use omnibus_shared::{PublicUrlSource, PublicUrlStatus, PUBLIC_URL_MAX_LEN};
 use sqlx::SqlitePool;
 use url::{ParseError, Url};
@@ -145,9 +147,41 @@ fn public_url_from_env() -> Option<String> {
     match normalize_public_url(&raw) {
         Ok(url) => Some(url),
         Err(error) => {
-            tracing::warn!(%error, "ignoring OMNIBUS_PUBLIC_URL: not a usable public URL");
+            if INVALID_ENV_WARNING.should_warn(&raw) {
+                tracing::warn!(%error, "ignoring OMNIBUS_PUBLIC_URL: not a usable public URL");
+            }
             None
         }
+    }
+}
+
+/// Shared by every read of the env var, so an invalid value warns once, not per read.
+static INVALID_ENV_WARNING: WarnOnce = WarnOnce::new();
+
+/// Decides whether an invalid value is worth a warning. Remembers only the last
+/// value warned about, so a repeat is quiet and A, B, A warns three times.
+struct WarnOnce {
+    last: Mutex<Option<String>>,
+}
+
+impl WarnOnce {
+    const fn new() -> Self {
+        Self {
+            last: Mutex::new(None),
+        }
+    }
+
+    /// True unless `raw` is the last value warned about; records it when true.
+    fn should_warn(&self, raw: &str) -> bool {
+        // A poisoned lock warns: a repeated warning beats a lost one.
+        let Ok(mut last) = self.last.lock() else {
+            return true;
+        };
+        if last.as_deref() == Some(raw) {
+            return false;
+        }
+        *last = Some(raw.to_string());
+        true
     }
 }
 

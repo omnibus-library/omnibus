@@ -1,7 +1,7 @@
 //! Unit tests for the `public_url` settings row: `normalize_public_url`'s
 //! accepted shapes and each rejection, the get/set pair, and the
 //! settings → `OMNIBUS_PUBLIC_URL` resolution, with the env var pinned via
-//! `EnvVarGuard`.
+//! `EnvVarGuard`, and the gate that keeps an invalid env var to one warning.
 
 use crate::pool::init_db;
 use crate::test_support::EnvVarGuard;
@@ -354,4 +354,44 @@ async fn seed_public_url_from_env_propagates_a_db_error_when_the_pool_is_closed(
     pool.close().await;
     let err = seed_public_url_from_env(&pool).await.unwrap_err();
     assert!(matches!(err, SettingsError::Db(_)));
+}
+
+#[test]
+fn warn_once_should_warn_returns_true_the_first_time_a_value_is_seen() {
+    let gate = WarnOnce::new();
+    assert!(gate.should_warn("books.example.com"));
+}
+
+#[test]
+fn warn_once_should_warn_returns_false_for_a_repeat_of_the_last_value() {
+    let gate = WarnOnce::new();
+    gate.should_warn("books.example.com");
+    assert!(!gate.should_warn("books.example.com"));
+}
+
+#[test]
+fn warn_once_should_warn_returns_true_for_a_different_value() {
+    let gate = WarnOnce::new();
+    gate.should_warn("books.example.com");
+    assert!(gate.should_warn("ftp://books.example.com"));
+}
+
+#[test]
+fn warn_once_should_warn_returns_true_for_an_earlier_value_after_a_different_one() {
+    let gate = WarnOnce::new();
+    gate.should_warn("books.example.com");
+    gate.should_warn("ftp://books.example.com");
+    assert!(gate.should_warn("books.example.com"));
+}
+
+#[test]
+fn warn_once_should_warn_returns_true_when_the_lock_is_poisoned() {
+    let gate = WarnOnce::new();
+    gate.should_warn("books.example.com");
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _held = gate.last.lock().unwrap();
+        panic!("poison the lock");
+    }));
+    assert!(gate.last.is_poisoned());
+    assert!(gate.should_warn("books.example.com"));
 }
