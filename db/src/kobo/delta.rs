@@ -41,6 +41,16 @@ impl SyncDelta {
     }
 }
 
+/// The server's clock in whole seconds, the second `state_updated_at` is clamped to. Read it
+/// just before the states a response carries, and hand it to [`record_synced`] as `read_at`.
+pub async fn server_second(pool: &SqlitePool) -> Result<i64, KoboError> {
+    Ok(
+        sqlx::query_scalar("SELECT CAST(strftime('%s','now') AS INTEGER)")
+            .fetch_one(pool)
+            .await?,
+    )
+}
+
 /// Compute what `device_id` still needs, given `user_id`'s opted-in books.
 /// This plain delta is read-only. [`record_synced`] advances the snapshot once the entitlements
 /// are written to the response, so a device that drops the connection mid-body sees the same
@@ -133,15 +143,17 @@ const STATE_CHUNK_SIZE: usize = 450;
 
 /// Advance the device's snapshot to match `changes`: upsert the adds and
 /// changes at the `last_modified` they were sent at, clearing any resend mark, and drop the
-/// removals. `delivered` holds the states the response carried; each book's watermark is its
-/// state's `state_updated_at`, one second less when that is the current second, so a save
-/// later in it is still announced and the book settles once a second has passed. Call only
-/// after the response body is committed to; see [`sync_delta`].
+/// removals. `delivered` holds the states the response carried and `read_at` the server second
+/// they were read in ([`server_second`]). Each book's watermark is its state's
+/// `state_updated_at`, one less when that is `read_at`, so a save later in that second is
+/// announced again on the next request within it (at most about a second of repeats), then
+/// settles. Call only after the response body is committed to; see [`sync_delta`].
 pub async fn record_synced(
     pool: &SqlitePool,
     device_id: i64,
     changes: &[SyncChange],
     delivered: &HashMap<String, KoboBookState>,
+    read_at: i64,
 ) -> Result<(), KoboError> {
     if changes.is_empty() {
         return Ok(());
@@ -159,18 +171,11 @@ pub async fn record_synced(
         }
     }
 
-    let now: i64 = sqlx::query_scalar("SELECT CAST(strftime('%s','now') AS INTEGER)")
-        .fetch_one(pool)
-        .await?;
-    let delivered = Delivered {
-        states: delivered,
-        now,
-    };
     let mut tx = pool.begin().await?;
-    upsert_synced(&mut tx, device_id, &upserts, &delivered).await?;
+    upsert_synced(&mut tx, device_id, &upserts, delivered, read_at).await?;
     // State-only: bump the watermark, never `last_modified_seen` — overwriting
     // it here would mark unsent metadata as delivered.
-    touch_state_changed(&mut tx, device_id, &state_changed, &delivered).await?;
+    touch_state_changed(&mut tx, device_id, &state_changed, delivered, read_at).await?;
     delete_removed(&mut tx, device_id, &removed).await?;
     tx.commit().await?;
     Ok(())
@@ -182,7 +187,8 @@ async fn upsert_synced(
     tx: &mut Transaction<'_, Sqlite>,
     device_id: i64,
     books: &[&KoboBookRow],
-    delivered: &Delivered<'_>,
+    delivered: &HashMap<String, KoboBookState>,
+    read_at: i64,
 ) -> Result<(), KoboError> {
     for chunk in books.chunks(UPSERT_CHUNK_SIZE) {
         let rows = std::iter::repeat_n("(?, ?, ?, ?)", chunk.len())
@@ -203,29 +209,21 @@ async fn upsert_synced(
                 .bind(device_id)
                 .bind(&book.uuid)
                 .bind(book.last_modified_epoch)
-                .bind(delivered.watermark(&book.uuid));
+                .bind(watermark(delivered, &book.uuid, read_at));
         }
         q.execute(&mut **tx).await?;
     }
     Ok(())
 }
 
-/// The states a sync delivered, and the server's second it was recorded in.
-struct Delivered<'a> {
-    states: &'a HashMap<String, KoboBookState>,
-    now: i64,
-}
-
-impl Delivered<'_> {
-    /// The watermark for `uuid`: its delivered stamp (0 with no state), held a second back
-    /// while that second is still running, because a later save in it shares the stamp.
-    fn watermark(&self, uuid: &str) -> i64 {
-        let stamp = self.states.get(uuid).map_or(0, |s| s.state_updated_at);
-        if stamp >= self.now {
-            stamp - 1
-        } else {
-            stamp
-        }
+/// The watermark for `uuid`: its delivered stamp (0 with no state), held a second back when it
+/// is the second the page was read in, because a later save in that second shares the stamp.
+fn watermark(delivered: &HashMap<String, KoboBookState>, uuid: &str, read_at: i64) -> i64 {
+    let stamp = delivered.get(uuid).map_or(0, |s| s.state_updated_at);
+    if stamp == read_at {
+        stamp - 1
+    } else {
+        stamp
     }
 }
 
@@ -236,7 +234,8 @@ async fn touch_state_changed(
     tx: &mut Transaction<'_, Sqlite>,
     device_id: i64,
     books: &[&KoboBookRow],
-    delivered: &Delivered<'_>,
+    delivered: &HashMap<String, KoboBookState>,
+    read_at: i64,
 ) -> Result<(), KoboError> {
     for chunk in books.chunks(STATE_CHUNK_SIZE) {
         let pairs = std::iter::repeat_n("(?, ?)", chunk.len())
@@ -250,7 +249,9 @@ async fn touch_state_changed(
         );
         let mut q = sqlx::query(&sql);
         for book in chunk {
-            q = q.bind(&book.uuid).bind(delivered.watermark(&book.uuid));
+            q = q
+                .bind(&book.uuid)
+                .bind(watermark(delivered, &book.uuid, read_at));
         }
         q.bind(device_id).execute(&mut **tx).await?;
     }

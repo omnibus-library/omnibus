@@ -61,7 +61,7 @@ Then the **cross-client interleavings**, where one client changes one field and 
 
 - web marks **Unread**, then the device reads → the web shows `reading` again;
 - web moves the position, then the device changes the status (and the reverse): neither change erases the other;
-- a web change in the **same second** as a sync: the next sync announces it, and a state saved in the sync's own second is announced once more until a second has passed (so one extra, identical item is expected, not a bug). Report a missed change, and don't sleep it away.
+- a web change in the **same second** as a sync: the next sync announces it, and a state saved in the sync's own second is announced again on the next request within that second (at most about a second of repeats, also across the pages of one `continue` chain), then settles, so a repeated identical item is expected, not a bug. Report a missed change, and don't sleep it away.
 
 ## 5. Clean up and report
 

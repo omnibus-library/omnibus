@@ -82,17 +82,15 @@ async fn page_states(
 
 /// The server's clock in whole seconds, the one `state_updated_at` is clamped to.
 async fn server_now(pool: &SqlitePool) -> i64 {
-    sqlx::query_scalar("SELECT CAST(strftime('%s','now') AS INTEGER)")
-        .fetch_one(pool)
-        .await
-        .unwrap()
+    server_second(pool).await.unwrap()
 }
 
 /// Drive one full sync: compute the delta, then commit it with the states it delivered.
 async fn sync_once(pool: &SqlitePool, user: i64, device: i64) -> SyncDelta {
     let delta = sync_delta(pool, user, device).await.unwrap();
+    let read_at = server_now(pool).await;
     let states = page_states(pool, user, &delta.changes).await;
-    record_synced(pool, device, &delta.changes, &states)
+    record_synced(pool, device, &delta.changes, &states, read_at)
         .await
         .unwrap();
     delta
@@ -252,12 +250,24 @@ async fn record_synced_is_idempotent_for_a_repeated_change() {
 
     let delta = sync_delta(&pool, user, device).await.unwrap();
     let states = page_states(&pool, user, &delta.changes).await;
-    record_synced(&pool, device, &delta.changes, &states)
-        .await
-        .unwrap();
-    record_synced(&pool, device, &delta.changes, &states)
-        .await
-        .unwrap();
+    record_synced(
+        &pool,
+        device,
+        &delta.changes,
+        &states,
+        server_now(&pool).await,
+    )
+    .await
+    .unwrap();
+    record_synced(
+        &pool,
+        device,
+        &delta.changes,
+        &states,
+        server_now(&pool).await,
+    )
+    .await
+    .unwrap();
 
     let held: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM kobo_books_sync WHERE device_id = ?")
         .bind(device)
@@ -341,9 +351,15 @@ async fn record_synced_clears_the_pending_mark_a_fresh_sync_left() {
     let fresh = fresh_sync_delta(&pool, user, device).await.unwrap();
 
     let states = page_states(&pool, user, &fresh.changes).await;
-    record_synced(&pool, device, &fresh.changes, &states)
-        .await
-        .unwrap();
+    record_synced(
+        &pool,
+        device,
+        &fresh.changes,
+        &states,
+        server_now(&pool).await,
+    )
+    .await
+    .unwrap();
 
     assert!(sync_delta(&pool, user, device).await.unwrap().is_empty());
 }
@@ -395,7 +411,7 @@ async fn sync_delta_still_owes_a_removal_when_a_book_is_opted_out_between_pages(
         .filter(|change| matches!(change, SyncChange::New(b) if b.uuid == kept))
         .collect();
     let states = page_states(&pool, user, &kept_only).await;
-    record_synced(&pool, device, &kept_only, &states)
+    record_synced(&pool, device, &kept_only, &states, server_now(&pool).await)
         .await
         .unwrap();
     crate::shelves::remove_book(&pool, shelf, &gone)
@@ -543,7 +559,7 @@ async fn recording_a_state_change_preserves_last_modified_seen() {
         .unwrap();
     let changes = [SyncChange::StateChanged(row)];
     let states = page_states(&pool, user, &changes).await;
-    record_synced(&pool, device, &changes, &states)
+    record_synced(&pool, device, &changes, &states, server_now(&pool).await)
         .await
         .unwrap();
 
@@ -608,7 +624,7 @@ async fn record_synced_applies_every_group_across_multiple_chunks() {
     let seed: Vec<SyncChange> = (0..1950)
         .map(|n| SyncChange::New(synthetic_book(n, 1)))
         .collect();
-    record_synced(&pool, device, &seed, &HashMap::new())
+    record_synced(&pool, device, &seed, &HashMap::new(), 0)
         .await
         .unwrap();
 
@@ -633,7 +649,7 @@ async fn record_synced_applies_every_group_across_multiple_chunks() {
         .chain((0..50).map(|n| (n, 8000)))
         .map(|(n, base)| (format!("synthetic-{n:05}"), state_at(base + n as i64)))
         .collect();
-    record_synced(&pool, device, &batch, &delivered)
+    record_synced(&pool, device, &batch, &delivered, 0)
         .await
         .unwrap();
 

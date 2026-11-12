@@ -59,8 +59,8 @@ pub async fn library_sync(
     let has_more = changes.len() > SYNC_PAGE_SIZE;
     changes.truncate(SYNC_PAGE_SIZE);
 
-    let states = match load_sync_page_states(&state, auth.user_id, &changes).await {
-        Ok(s) => s,
+    let page = match load_sync_page_states(&state, auth.user_id, &changes).await {
+        Ok(page) => page,
         Err(res) => return res,
     };
 
@@ -68,11 +68,18 @@ pub async fn library_sync(
         changes,
         origin_from_headers(&state, &headers),
         auth.token,
-        states,
+        page,
         state.pool().clone(),
         auth.device_id,
         has_more,
     )
+}
+
+/// One sync page's reading states, and the server second they were read in, which
+/// `record_synced` needs however long the body takes to stream.
+struct PageStates {
+    states: HashMap<String, db::kobo::KoboBookState>,
+    read_at: i64,
 }
 
 /// Load the per-user reading state for one sync page and enrich it with
@@ -82,7 +89,7 @@ async fn load_sync_page_states(
     state: &AppState,
     user_id: i64,
     changes: &[db::kobo::SyncChange],
-) -> Result<HashMap<String, db::kobo::KoboBookState>, Response> {
+) -> Result<PageStates, Response> {
     let page_uuids: Vec<String> = changes
         .iter()
         .filter_map(|c| match c {
@@ -92,11 +99,15 @@ async fn load_sync_page_states(
             db::kobo::SyncChange::Removed { .. } => None,
         })
         .collect();
+    // Before the states, so a save in this second is never older than `read_at`.
+    let read_at = db::kobo::server_second(state.pool())
+        .await
+        .map_err(|e| internal("kobo server_second", e))?;
     let mut states = db::kobo::reading_state_for(state.pool(), user_id, &page_uuids)
         .await
         .map_err(|e| internal("kobo reading_state_for", e))?;
     enrich_states_with_derived_spans(state, user_id, changes, &mut states).await;
-    Ok(states)
+    Ok(PageStates { states, read_at })
 }
 
 /// Serialize one sync page as the lazily-streamed JSON-array response body, setting
@@ -106,7 +117,7 @@ fn build_sync_response(
     changes: Vec<db::kobo::SyncChange>,
     base: String,
     token: String,
-    states: HashMap<String, db::kobo::KoboBookState>,
+    page: PageStates,
     pool: sqlx::SqlitePool,
     device_id: i64,
     has_more: bool,
@@ -116,7 +127,8 @@ fn build_sync_response(
             changes,
             base,
             token,
-            states,
+            states: page.states,
+            read_at: page.read_at,
             phase: SyncPhase::Open,
         },
         move |st| {
@@ -389,6 +401,7 @@ struct SyncStreamState {
     base: String,
     token: String,
     states: HashMap<String, db::kobo::KoboBookState>,
+    read_at: i64,
     phase: SyncPhase,
 }
 
@@ -462,7 +475,9 @@ async fn sync_stream_close(
     device_id: i64,
     mut st: SyncStreamState,
 ) -> (Result<Bytes, std::io::Error>, SyncStreamState) {
-    if let Err(e) = db::kobo::record_synced(pool, device_id, &st.changes, &st.states).await {
+    if let Err(e) =
+        db::kobo::record_synced(pool, device_id, &st.changes, &st.states, st.read_at).await
+    {
         tracing::warn!(device_id, error = %e, "kobo snapshot advance failed");
     }
     st.phase = SyncPhase::End;

@@ -4,7 +4,6 @@
 use omnibus_shared::{ReadStatus, SetReadStatus};
 
 use super::*;
-use crate::test_support::{forget_read_status, place_position};
 
 /// Migration `0100`'s resend, read from the migration itself so the two cannot drift.
 const KOBO_RESEND: &str = include_str!("../../../../migrations/0100_kobo_resend_metadata.sql");
