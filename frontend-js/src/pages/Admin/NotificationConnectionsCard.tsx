@@ -25,6 +25,7 @@ import {
   postsTo,
   savedTestOf,
 } from "./notifications";
+import "./Admin.css";
 
 const DOT_CLASS = {
   none: "api-key-dot",

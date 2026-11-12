@@ -23,6 +23,7 @@ import {
   publicUrlFieldOf,
   refusalText,
 } from "./publicUrl";
+import "./Admin.css";
 
 const ERROR_ID = "public-url-error";
 const HINT_ID = "public-url-hint";

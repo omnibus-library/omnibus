@@ -36,6 +36,7 @@ import {
   testOf,
 } from "./notifications";
 import { ModalShell } from "./UserModals";
+import "./Admin.css";
 
 type Props = {
   /** The connection to edit; null adds a new one. */

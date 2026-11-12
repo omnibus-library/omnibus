@@ -479,7 +479,7 @@ export const TestSucceeded: Story = {
   },
 };
 
-export const TestFailedWithTheProvidersAnswer: Story = {
+export const TestFailedShowsTheServersSentence: Story = {
   beforeEach({ msw }) {
     msw.use(
       http.post(

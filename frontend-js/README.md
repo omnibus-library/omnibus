@@ -279,8 +279,9 @@ shell provides it.
   `composition`, the chart builder's `chart`, `plot`, `notes`, `zoom` and
   `tween`, the admin screens' `sources`, `recentTasks`,
   `workerLines`, `metadataOrder`, `users`, `smtp`, `integrations`,
-  `publicUrl`, `notifications` (what a save, a switch flip or a test sends, and
-  which secrets it leaves out), `health` and `logs`, and the cleanup review's
+  `publicUrl`, `notifications` (what a save or a test sends, which secrets it
+  leaves out, and when a saved one must be typed again), `health` and `logs`,
+  and the cleanup review's
   `review`), the two stats pages' refusal to
   refetch on window focus (against `msw/node`), plus the real route table in
   `src/router.test.tsx`: the settings redirects, the layout split, the guest

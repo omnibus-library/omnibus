@@ -29,6 +29,7 @@ import {
   McpStatus,
   MetadataSource,
   type NotificationConnection,
+  NotificationConnectionEnabled,
   NotificationConnectionInput,
   type NotificationEvent,
   NotificationTest,
@@ -901,14 +902,12 @@ export function notificationHandlers(
           path: new URL(request.url).pathname,
           body,
         });
-        const keys = body && typeof body === "object" ? Object.keys(body) : [];
-        const enabled = (body as { enabled?: unknown } | null)?.enabled;
-        if (keys.length !== 1 || typeof enabled !== "boolean") {
-          return new HttpResponse(
-            'the body must be {"enabled": true or false} and nothing else',
-            { status: 422 },
-          );
+        // Strict, as the server denies any key but `enabled`.
+        const parsed = NotificationConnectionEnabled.strict().safeParse(body);
+        if (!parsed.success) {
+          return new HttpResponse(parsed.error.message, { status: 422 });
         }
+        const { enabled } = parsed.data;
         const was = connections.find((c) => c.id === id);
         if (!was) return gone();
         const switched = { ...was, enabled };

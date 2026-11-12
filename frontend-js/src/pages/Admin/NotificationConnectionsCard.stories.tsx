@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { HttpResponse, http } from "msw";
+import { delay, HttpResponse, http } from "msw";
 import { expect, waitFor, within } from "storybook/test";
 import { nowSecs } from "../../format";
 import {
@@ -19,6 +19,9 @@ const writes: NotificationWrites = {
   deleted: [],
   tested: [],
 };
+
+/** How many times the list was read, for the story that holds the read after a switch. */
+let reads = 0;
 
 /** What the server records when ntfy turns the saved token away. */
 const SIGN_IN_REFUSED =
@@ -198,6 +201,51 @@ export const Loaded: Story = {
   },
 };
 
+/** An error recorded before errors were sentences: a status line and the provider's raw body, with nowhere to break a line. */
+const OLD_STYLE_ERROR = `the server answered 401 Unauthorized: {"code":40101,"http":401,"error":"unauthorized","link":"https://ntfy.sh/docs/publish/#authentication","detail":"${"x".repeat(140)}"}`;
+
+export const KeepsALongOldStyleErrorInsideItsRow: Story = {
+  decorators: [
+    (Story) => (
+      <div style={{ maxWidth: 360 }}>
+        <Story />
+      </div>
+    ),
+  ],
+  beforeEach({ msw }) {
+    msw.use(
+      ...notificationHandlers(
+        [
+          aWireNotificationConnection({
+            id: 5,
+            name: "Old phone",
+            last_delivery: {
+              at: nowSecs() - 600,
+              ok: false,
+              error: OLD_STYLE_ERROR,
+            },
+          }),
+        ],
+        { writes },
+      ),
+    );
+  },
+  play: async ({ canvas, canvasElement }) => {
+    const old = await row(canvas, "Old phone");
+    const error = within(old).getByTestId("notification-delivery-error");
+    await expect(error.textContent).toBe(OLD_STYLE_ERROR);
+    const card = canvasElement.querySelector<HTMLElement>(
+      '[data-testid="notification-connections-card"]',
+    );
+    // Shown whole, it wraps inside the row rather than pushing the row or the card wider.
+    for (const element of [error, old, card]) {
+      await expect(element?.scrollWidth).toBeLessThanOrEqual(
+        element?.clientWidth ?? 0,
+      );
+    }
+  },
+};
+
 export const TurnsAConnectionOff: Story = {
   play: async ({ canvas, userEvent }) => {
     const kitchen = await row(canvas, "Kitchen tablet");
@@ -217,37 +265,42 @@ export const TurnsAConnectionOff: Story = {
     ]);
     await expect(writes.updated).toEqual([]);
     await waitFor(() => expect(toggle).not.toBeChecked());
-    await expect(toggle).toBeEnabled();
+    await waitFor(() => expect(toggle).toBeEnabled());
   },
 };
 
 export const ShowsTheConnectionAsTheServerHoldsItAfterTheSwitch: Story = {
   beforeEach({ msw }) {
-    // Another admin renamed the kitchen tablet and moved its topic after this page read the list.
-    let edited = false;
-    const elsewhere = (enabled: boolean) =>
-      aWireNotificationConnection(
-        {
-          id: 1,
-          name: "Hall tablet",
-          enabled,
-          last_delivery: { at: nowSecs() - 3 * 3600, ok: true, error: null },
-        },
-        { topic: "omnibus-hall" },
-      );
+    reads = 0;
     msw.use(
-      http.get(LIST, () =>
-        HttpResponse.json({
-          connections: MIXED().map((c) =>
-            edited && c.id === 1 ? elsewhere(false) : c,
-          ),
+      // The page read the list before another admin renamed the kitchen tablet and moved its
+      // topic. The read after the switch never answers, so only the PATCH's answer can carry
+      // the new name to the row.
+      http.get(LIST, async () => {
+        reads += 1;
+        if (reads > 1) await delay("infinite");
+        return HttpResponse.json({
+          connections: MIXED(),
           available_events: ["request_needs_chooser"],
-        }),
-      ),
-      http.patch(`${LIST}/:id`, () => {
-        edited = true;
-        return HttpResponse.json(elsewhere(false));
+        });
       }),
+      http.patch(`${LIST}/:id`, () =>
+        HttpResponse.json(
+          aWireNotificationConnection(
+            {
+              id: 1,
+              name: "Hall tablet",
+              enabled: false,
+              last_delivery: {
+                at: nowSecs() - 3 * 3600,
+                ok: true,
+                error: null,
+              },
+            },
+            { topic: "omnibus-hall" },
+          ),
+        ),
+      ),
     );
   },
   play: async ({ canvas, userEvent }) => {
@@ -259,6 +312,8 @@ export const ShowsTheConnectionAsTheServerHoldsItAfterTheSwitch: Story = {
     );
 
     const hall = await row(canvas, "Hall tablet");
+    // The list's own read after the switch went out and is still held.
+    await waitFor(() => expect(reads).toBe(2));
     await expect(hall).toHaveTextContent("ntfy.sh/omnibus-hall");
     await expect(
       within(hall).getByRole("switch", {
@@ -288,9 +343,9 @@ export const ShowsTheSwitchMovingWhileItSaves: Story = {
     });
     await userEvent.click(toggle);
 
+    await waitFor(() => expect(toggle).toHaveAttribute("aria-busy", "true"));
     await expect(toggle).not.toBeChecked();
     await expect(toggle).toBeDisabled();
-    await expect(toggle).toHaveAttribute("aria-busy", "true");
   },
 };
 
@@ -315,7 +370,7 @@ export const SaysWhyTurningOffFailed: Story = {
         "Couldn’t turn off Kitchen tablet: database is locked",
       ),
     ).toHaveClass("settings-status", "error");
-    await expect(toggle).toBeChecked();
+    await waitFor(() => expect(toggle).toBeChecked());
   },
 };
 

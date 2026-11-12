@@ -338,7 +338,7 @@
   max-width: 62ch;
   font-size: 0.85rem;
   color: var(--bad);
-  overflow-wrap: break-word;
+  overflow-wrap: anywhere;
 }
 .notify-row-actions {
   display: flex;
