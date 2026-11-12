@@ -48,3 +48,18 @@ async fn record_synced_leaves_a_state_written_after_the_page_was_read_owed() {
     assert_eq!(next.len(), 1, "got {:?}", next.changes);
     assert!(matches!(&next.changes[0], SyncChange::StateChanged(b) if b.uuid == uuid));
 }
+
+#[tokio::test]
+async fn sync_delta_announces_a_second_position_saved_in_the_second_the_first_was_delivered() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let (user, device, uuid) = device_holding_a_book(&pool).await;
+    let now = server_now(&pool).await;
+    place_position(&pool, user, &uuid, 40, now).await;
+    sync_once(&pool, user, device).await;
+
+    place_position(&pool, user, &uuid, 60, now).await;
+    let delta = sync_delta(&pool, user, device).await.unwrap();
+
+    assert_eq!(delta.len(), 1, "got {:?}", delta.changes);
+    assert!(matches!(&delta.changes[0], SyncChange::StateChanged(b) if b.uuid == uuid));
+}

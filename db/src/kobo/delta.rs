@@ -134,8 +134,9 @@ const STATE_CHUNK_SIZE: usize = 450;
 /// Advance the device's snapshot to match `changes`: upsert the adds and
 /// changes at the `last_modified` they were sent at, clearing any resend mark, and drop the
 /// removals. `delivered` holds the states the response carried; each book's watermark is its
-/// state's `state_updated_at`, not a clock time. Call only after the response body is
-/// committed to; see [`sync_delta`].
+/// state's `state_updated_at`, one second less when that is the current second, so a save
+/// later in it is still announced and the book settles once a second has passed. Call only
+/// after the response body is committed to; see [`sync_delta`].
 pub async fn record_synced(
     pool: &SqlitePool,
     device_id: i64,
@@ -158,11 +159,18 @@ pub async fn record_synced(
         }
     }
 
+    let now: i64 = sqlx::query_scalar("SELECT CAST(strftime('%s','now') AS INTEGER)")
+        .fetch_one(pool)
+        .await?;
+    let delivered = Delivered {
+        states: delivered,
+        now,
+    };
     let mut tx = pool.begin().await?;
-    upsert_synced(&mut tx, device_id, &upserts, delivered).await?;
+    upsert_synced(&mut tx, device_id, &upserts, &delivered).await?;
     // State-only: bump the watermark, never `last_modified_seen` — overwriting
     // it here would mark unsent metadata as delivered.
-    touch_state_changed(&mut tx, device_id, &state_changed, delivered).await?;
+    touch_state_changed(&mut tx, device_id, &state_changed, &delivered).await?;
     delete_removed(&mut tx, device_id, &removed).await?;
     tx.commit().await?;
     Ok(())
@@ -174,7 +182,7 @@ async fn upsert_synced(
     tx: &mut Transaction<'_, Sqlite>,
     device_id: i64,
     books: &[&KoboBookRow],
-    delivered: &HashMap<String, KoboBookState>,
+    delivered: &Delivered<'_>,
 ) -> Result<(), KoboError> {
     for chunk in books.chunks(UPSERT_CHUNK_SIZE) {
         let rows = std::iter::repeat_n("(?, ?, ?, ?)", chunk.len())
@@ -195,16 +203,30 @@ async fn upsert_synced(
                 .bind(device_id)
                 .bind(&book.uuid)
                 .bind(book.last_modified_epoch)
-                .bind(delivered_stamp(delivered, &book.uuid));
+                .bind(delivered.watermark(&book.uuid));
         }
         q.execute(&mut **tx).await?;
     }
     Ok(())
 }
 
-/// A book's delivered state stamp, 0 when it has no state yet.
-fn delivered_stamp(delivered: &HashMap<String, KoboBookState>, uuid: &str) -> i64 {
-    delivered.get(uuid).map_or(0, |s| s.state_updated_at)
+/// The states a sync delivered, and the server's second it was recorded in.
+struct Delivered<'a> {
+    states: &'a HashMap<String, KoboBookState>,
+    now: i64,
+}
+
+impl Delivered<'_> {
+    /// The watermark for `uuid`: its delivered stamp (0 with no state), held a second back
+    /// while that second is still running, because a later save in it shares the stamp.
+    fn watermark(&self, uuid: &str) -> i64 {
+        let stamp = self.states.get(uuid).map_or(0, |s| s.state_updated_at);
+        if stamp >= self.now {
+            stamp - 1
+        } else {
+            stamp
+        }
+    }
 }
 
 /// Set `synced_at` to the delivered stamp for every book whose reading state moved but
@@ -214,7 +236,7 @@ async fn touch_state_changed(
     tx: &mut Transaction<'_, Sqlite>,
     device_id: i64,
     books: &[&KoboBookRow],
-    delivered: &HashMap<String, KoboBookState>,
+    delivered: &Delivered<'_>,
 ) -> Result<(), KoboError> {
     for chunk in books.chunks(STATE_CHUNK_SIZE) {
         let pairs = std::iter::repeat_n("(?, ?)", chunk.len())
@@ -228,17 +250,15 @@ async fn touch_state_changed(
         );
         let mut q = sqlx::query(&sql);
         for book in chunk {
-            q = q
-                .bind(&book.uuid)
-                .bind(delivered_stamp(delivered, &book.uuid));
+            q = q.bind(&book.uuid).bind(delivered.watermark(&book.uuid));
         }
         q.bind(device_id).execute(&mut **tx).await?;
     }
     Ok(())
 }
 
-/// Make every Kobo of `user_id` that synced `book_uuid` at or after `event_at` see its state
-/// again: a write dated by its own earlier event time never passes their `synced_at`.
+/// Make every Kobo of `user_id` whose delivered state stamp for `book_uuid` is at or after
+/// `event_at` see its state again: a write dated by its own earlier event time never passes it.
 pub(crate) async fn reannounce_state_since(
     tx: &mut Transaction<'_, Sqlite>,
     user_id: i64,

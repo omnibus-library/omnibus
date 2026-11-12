@@ -656,21 +656,25 @@ async fn library_sync_re_announces_a_status_change_to_a_device_that_holds_the_bo
         .unwrap();
     assert_eq!(body_json(first).await.as_array().unwrap().len(), 1);
 
-    // Age the snapshot past `synced_at`'s 1-second granularity.
-    sqlx::query("UPDATE kobo_books_sync SET synced_at = 1")
-        .execute(&pool)
+    // Dated in an earlier second, so the delivered state settles rather than being
+    // re-announced for the second it was saved in.
+    let earlier: i64 = sqlx::query_scalar("SELECT CAST(strftime('%s','now') AS INTEGER) - 10")
+        .fetch_one(&pool)
         .await
         .unwrap();
-    db::read_status::set_read_status(
-        &pool,
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await.unwrap();
+    db::read_status::set_read_status_at_tx(
+        &mut tx,
         uid,
         &omnibus_shared::SetReadStatus {
             book_uuid: uuid.clone(),
             status: omnibus_shared::ReadStatus::Finished,
         },
+        earlier,
     )
     .await
     .unwrap();
+    tx.commit().await.unwrap();
 
     let second = app.clone().oneshot(resync(&token)).await.unwrap();
     let json = body_json(second).await;
