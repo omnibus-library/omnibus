@@ -131,6 +131,19 @@ fn normalize_public_url_rejects_a_url_over_the_length_cap() {
     assert_eq!(rejection(&too_long), "public url exceeds 2048 bytes");
 }
 
+#[test]
+fn normalize_public_url_rejects_a_url_that_percent_encoding_grows_past_the_cap() {
+    let grows = format!("https://books.example.com/{}", "é".repeat(700));
+    assert!(grows.len() <= PUBLIC_URL_MAX_LEN);
+    assert_eq!(rejection(&grows), "public url exceeds 2048 bytes");
+}
+
+#[test]
+fn normalize_public_url_returns_an_already_normalised_url_unchanged() {
+    let once = normalize_public_url("https://books.example.com/caf é/").unwrap();
+    assert_eq!(normalize_public_url(&once).unwrap(), once);
+}
+
 #[tokio::test]
 async fn get_public_url_returns_none_when_nothing_is_saved() {
     let pool = init_db("sqlite::memory:").await.unwrap();

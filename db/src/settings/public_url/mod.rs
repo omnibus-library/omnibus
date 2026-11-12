@@ -10,7 +10,7 @@ use omnibus_shared::{PublicUrlSource, PublicUrlStatus, PUBLIC_URL_MAX_LEN};
 use sqlx::SqlitePool;
 use url::{ParseError, Url};
 
-use super::{non_empty_env, SettingsError};
+use super::{get_setting, non_empty_env, SettingsError};
 
 /// `settings` KV key for the public URL. Stored directly (not via the
 /// [`super::Settings`] struct) so saving it never triggers the scan-root
@@ -52,7 +52,12 @@ pub fn normalize_public_url(raw: &str) -> Result<String, SettingsError> {
     }
     // An http(s) URL always has a host and a `/`-rooted path, so trimming
     // slashes stops at the host.
-    Ok(url.as_str().trim_end_matches('/').to_string())
+    let normalized = url.as_str().trim_end_matches('/');
+    // Parsing percent-encodes, so a value under the cap can grow past it.
+    if normalized.len() > PUBLIC_URL_MAX_LEN {
+        return Err(invalid(&format!("exceeds {PUBLIC_URL_MAX_LEN} bytes")));
+    }
+    Ok(normalized.to_string())
 }
 
 fn invalid(reason: &str) -> SettingsError {
@@ -61,11 +66,9 @@ fn invalid(reason: &str) -> SettingsError {
 
 /// Read the saved public URL, or `None` when unset/blank. Ignores the env var.
 pub async fn get_public_url(pool: &SqlitePool) -> Result<Option<String>, SettingsError> {
-    let v = sqlx::query_scalar::<_, String>("SELECT value FROM settings WHERE key = ?")
-        .bind(PUBLIC_URL_KEY)
-        .fetch_optional(pool)
-        .await?;
-    Ok(v.map(|s| s.trim().to_string()).filter(|s| !s.is_empty()))
+    Ok(get_setting(pool, PUBLIC_URL_KEY)
+        .await?
+        .map(|s| s.trim().to_string()))
 }
 
 /// Save the public URL in its normalised form, or clear it when `None`/blank.
