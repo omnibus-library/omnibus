@@ -18818,7 +18818,7 @@
       },
       "ViewFilters": {
         "type": "object",
-        "description": "A library filter. A book passes when it matches every clause. Up to 16 clauses.\nFormat values are lowercase, such as `epub` or `m4b`. On input it also takes the older\n`authors`, `series`, `formats`, `tags` and `genres` lists, each read as an include\nclause. Output carries `clauses` only.",
+        "description": "A library filter. A book passes when it matches every clause. Up to 16 clauses and 200\nvalues in all.\nFormat values are lowercase, such as `epub` or `m4b`. On input it also takes the older\n`authors`, `series`, `formats`, `tags` and `genres` lists, each read as an include\nclause. Output carries `clauses` only.",
         "required": [
           "clauses"
         ],

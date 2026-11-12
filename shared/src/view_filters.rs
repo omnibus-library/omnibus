@@ -30,6 +30,11 @@ pub const MAX_FILTER_CLAUSES: usize = 16;
 /// Most values one [`FilterClause`] may list.
 pub const MAX_FILTER_VALUES: usize = 64;
 
+/// Most values a [`ViewFilters`] may list across all its clauses. Four binds a value
+/// (the stats-exclusion diff binds a shelf value twice, in two predicates) plus eight a
+/// shelf clause keeps the stats-exclusion diff under SQLite's 999 binds.
+pub const MAX_FILTER_TOTAL_VALUES: usize = 200;
+
 /// Whether a clause keeps the books that match it or drops them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
@@ -69,7 +74,8 @@ impl FilterClause {
     }
 }
 
-/// A library filter. A book passes when it matches every clause. Up to 16 clauses.
+/// A library filter. A book passes when it matches every clause. Up to 16 clauses and 200
+/// values in all.
 /// Format values are lowercase, such as `epub` or `m4b`. On input it also takes the older
 /// `authors`, `series`, `formats`, `tags` and `genres` lists, each read as an include
 /// clause. Output carries `clauses` only.
@@ -109,9 +115,14 @@ impl From<ViewFiltersWire> for ViewFilters {
             (FilterField::Tag, wire.tags),
             (FilterField::Genre, wire.genres),
         ];
+        let mut budget = MAX_FILTER_TOTAL_VALUES;
         let clauses = legacy
             .into_iter()
-            .filter_map(|(field, values)| legacy_clause(field, values))
+            .filter_map(|(field, values)| {
+                let clause = legacy_clause(field, values, budget)?;
+                budget -= clause.values.len();
+                Some(clause)
+            })
             .chain(wire.clauses)
             .collect();
         Self { clauses }
@@ -119,12 +130,13 @@ impl From<ViewFiltersWire> for ViewFilters {
 }
 
 /// An include clause over the values of a stored facet that [`ViewFilters::validate`]
-/// would accept, so an old record never loads into a filter the API rejects.
-fn legacy_clause(field: FilterField, values: Vec<String>) -> Option<FilterClause> {
+/// would accept, so an old record never loads into a filter the API rejects. It keeps
+/// at most `budget` values, what is left of [`MAX_FILTER_TOTAL_VALUES`].
+fn legacy_clause(field: FilterField, values: Vec<String>, budget: usize) -> Option<FilterClause> {
     let values: Vec<String> = values
         .into_iter()
         .filter(|v| !v.trim().is_empty() && v.chars().count() <= SHELF_RULE_VALUE_MAX_LEN)
-        .take(MAX_FILTER_VALUES)
+        .take(MAX_FILTER_VALUES.min(budget))
         .collect();
     (!values.is_empty()).then_some(FilterClause {
         field,
@@ -134,9 +146,11 @@ fn legacy_clause(field: FilterField, values: Vec<String>) -> Option<FilterClause
 }
 
 impl ViewFilters {
-    /// `true` when there is no clause.
+    /// `true` when no clause has a usable value, so the filter keeps every book.
     pub fn is_empty(&self) -> bool {
-        self.clauses.is_empty()
+        self.clauses
+            .iter()
+            .all(|clause| clause.usable_values().next().is_none())
     }
 
     /// Whether `book` passes every clause, over metadata with overrides already
@@ -155,12 +169,17 @@ impl ViewFilters {
         (!undecided).then_some(true)
     }
 
-    /// Reject filters over the clause or value caps, or a clause no book could
-    /// be matched by.
+    /// Reject filters over the clause, value or total-value caps, or a clause no
+    /// book could be matched by.
     pub fn validate(&self) -> Result<(), String> {
         if self.clauses.len() > MAX_FILTER_CLAUSES {
             return Err(format!(
                 "a filter may have at most {MAX_FILTER_CLAUSES} clauses"
+            ));
+        }
+        if self.clauses.iter().map(|c| c.values.len()).sum::<usize>() > MAX_FILTER_TOTAL_VALUES {
+            return Err(format!(
+                "a filter may have at most {MAX_FILTER_TOTAL_VALUES} values in all"
             ));
         }
         self.clauses.iter().try_for_each(validate_clause)
