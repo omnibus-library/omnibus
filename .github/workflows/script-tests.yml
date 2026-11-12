@@ -100,7 +100,7 @@ jobs:
     name: testflight_distribute.py
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v5
         with:
@@ -118,7 +118,7 @@ jobs:
     name: testflight_feedback_to_issues.py
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v5
         with:
@@ -134,7 +134,7 @@ jobs:
     name: module_map.py
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v5
         with:
@@ -147,7 +147,7 @@ jobs:
     name: koreader_report.py
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v5
         with:
@@ -160,7 +160,7 @@ jobs:
     name: scratch-server.sh
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Run suite
         run: bash scripts/tests/scratch-server-make-scratch-dir.test.sh
@@ -169,7 +169,7 @@ jobs:
     name: koreader-dev.sh
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Run suite
         run: bash scripts/tests/koreader-dev-preflight.test.sh
@@ -178,7 +178,7 @@ jobs:
     name: koreader_home.py
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v5
         with:
@@ -191,7 +191,7 @@ jobs:
     name: docker/entrypoint.sh
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Run suite
         run: bash scripts/tests/docker-entrypoint-react.test.sh
@@ -200,7 +200,7 @@ jobs:
     name: dev-server-down.sh
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Run suite
         run: bash scripts/tests/dev-server-down.test.sh
@@ -209,7 +209,7 @@ jobs:
     name: ios-sim.sh
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Run suites
         run: |
@@ -220,7 +220,7 @@ jobs:
     name: dev-port.sh React build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Run suite
         run: bash scripts/tests/dev-react-build.test.sh
@@ -229,7 +229,7 @@ jobs:
     name: check-migration-numbers.sh
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Run suite
         run: bash scripts/tests/check-migration-numbers.test.sh

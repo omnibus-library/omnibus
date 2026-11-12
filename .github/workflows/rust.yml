@@ -35,7 +35,7 @@ jobs:
     outputs:
       rust: ${{ steps.filter.outputs.rust }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: dorny/paths-filter@v3
         id: filter
@@ -64,7 +64,7 @@ jobs:
     if: ${{ needs.changes.outputs.rust == 'true' || github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install stable Rust with rustfmt
         uses: dtolnay/rust-toolchain@stable
@@ -84,7 +84,7 @@ jobs:
     if: ${{ github.event_name == 'pull_request' && needs.changes.outputs.rust == 'true' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -146,7 +146,7 @@ jobs:
           - name: mock-requests
             cmd: cargo clippy -p omnibus-mock-requests --all-targets -- -D warnings
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@v22
@@ -215,7 +215,7 @@ jobs:
           - name: mock-requests
             args: -p omnibus-mock-requests
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Public-domain fixtures aren't in git — they're the fixtures-vN release
       # asset. Only the `server` and `db` variants need them.
@@ -312,7 +312,7 @@ jobs:
       # Required to post / update the sticky audit-report comment on PRs.
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@v22

@@ -31,7 +31,7 @@ jobs:
     name: publish site
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # No build step: site/src/ is what gets served. `.nojekyll` keeps Pages
       # from running Jekyll over it (which would drop any _-prefixed path).
