@@ -1,26 +1,63 @@
 //  SettingsView.swift
-//  Admin-only server settings: library paths and index maintenance.
+//  Admin-only server settings: library paths, the way in to notifications,
+//  and index maintenance.
 
 import SwiftUI
+
+/// Whether the library paths on screen are the server's, kept apart from the
+/// view so the rules are testable. Saving posts both paths whole, so blank
+/// fields that were never filled from the server would clear the library.
+struct LibraryPathsLoad: Equatable {
+    /// Set by the first read that answers, and never unset: a later appearance
+    /// (coming back from Notifications) must not overwrite paths being typed.
+    private(set) var hasLoaded = false
+    private(set) var isLoading = false
+    /// Why the last read failed, while none has answered.
+    private(set) var failure: String?
+
+    /// Whether an appearance should read the paths.
+    var needsLoad: Bool { !hasLoaded && !isLoading }
+    /// Only the server's own paths may be posted back.
+    var canSave: Bool { hasLoaded }
+    /// Nothing to show yet: no answer and no failure to explain.
+    var isWaiting: Bool { !hasLoaded && failure == nil }
+
+    mutating func begin() { isLoading = true }
+
+    mutating func succeeded() {
+        hasLoaded = true
+        isLoading = false
+        failure = nil
+    }
+
+    /// A cancelled read (the view went away mid-request) is no failure: the
+    /// next appearance reads again.
+    mutating func failed(_ error: Error) {
+        isLoading = false
+        guard !isCancellation(error) else { return }
+        failure = (error as? APIError)?.errorDescription ?? error.localizedDescription
+    }
+}
 
 struct SettingsView: View {
     @Environment(\.palette) private var palette
 
     @State private var ebookPath = ""
     @State private var audiobookPath = ""
-    @State private var isLoading = true
+    @State private var load = LibraryPathsLoad()
     @State private var isSaving = false
     @State private var status: String?
     @State private var isError = false
 
     var body: some View {
         Group {
-            if isLoading {
+            if load.isWaiting {
                 LoadingView()
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 28) {
                         paths
+                        notifications
                         maintenance
                         if let status { statusLine(status) }
                     }
@@ -35,13 +72,45 @@ struct SettingsView: View {
         .background(ScreenBackground())
         .navigationTitle("Server settings")
         .navigationBarTitleDisplayMode(.inline)
-        .task { await load() }
+        .task { if load.needsLoad { await read() } }
     }
 
     /// A filesystem path is long, monospaced, and edited whole — a trailing
     /// `LabeledContent` field gave it a third of the row and truncated the part
     /// that identifies it.
+    @ViewBuilder
     private var paths: some View {
+        if load.hasLoaded {
+            pathFields
+        } else {
+            unreadPaths
+        }
+    }
+
+    /// The paths couldn't be read, so there is nothing safe to save over them.
+    private var unreadPaths: some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            SectionLabel("Library paths")
+            Text("Couldn\u{2019}t read the library paths. \(load.failure ?? "")")
+                .font(.ui(13))
+                .foregroundStyle(palette.badColor)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("settings-paths-error")
+            Button {
+                Task { await read() }
+            } label: {
+                if load.isLoading {
+                    ProgressView()
+                } else {
+                    Text("Try again")
+                }
+            }
+            .buttonStyle(EmptyStateActionStyle())
+            .disabled(load.isLoading)
+        }
+    }
+
+    private var pathFields: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
             SectionLabel("Library paths")
 
@@ -66,11 +135,30 @@ struct SettingsView: View {
                 }
             }
             .buttonStyle(FilledButtonStyle())
-            .disabled(isSaving)
+            .disabled(isSaving || !load.canSave)
 
             Text("Saving repoints the library and reindexes in the background.")
                 .font(.ui(12))
                 .foregroundStyle(palette.ink3Color)
+        }
+    }
+
+    private var notifications: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            SectionLabel("Notifications")
+
+            VStack(spacing: 0) {
+                NavigationLink(value: Destination.notifications) {
+                    rowLabel(
+                        "Connections and public URL",
+                        detail: "Where the server sends alerts through ntfy, and the address their links open.",
+                        icon: "bell", isFirst: true, chevron: true
+                    )
+                }
+                .buttonStyle(PressableStyle())
+                .accessibilityIdentifier("settings-notifications")
+                RecordRule()
+            }
         }
     }
 
@@ -112,32 +200,45 @@ struct SettingsView: View {
             Haptics.tap()
             Task { await action() }
         } label: {
-            VStack(spacing: 0) {
-                if !isFirst { Hairline() }
-
-                HStack(spacing: Spacing.md) {
-                    Image(systemName: icon)
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(palette.accentColor)
-                        .frame(width: 24)
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(title)
-                            .font(.ui(15))
-                            .foregroundStyle(palette.ink0Color)
-                        Text(detail)
-                            .font(.ui(11.5))
-                            .foregroundStyle(palette.ink3Color)
-                            .multilineTextAlignment(.leading)
-                    }
-
-                    Spacer(minLength: 0)
-                }
-                .padding(.vertical, 12)
-                .contentShape(Rectangle())
-            }
+            rowLabel(title, detail: detail, icon: icon, isFirst: isFirst)
         }
         .buttonStyle(PressableStyle())
+    }
+
+    private func rowLabel(
+        _ title: String, detail: String, icon: String, isFirst: Bool, chevron: Bool = false
+    ) -> some View {
+        VStack(spacing: 0) {
+            if !isFirst { Hairline() }
+
+            HStack(spacing: Spacing.md) {
+                Image(systemName: icon)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(palette.accentColor)
+                    .frame(width: 24)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.ui(15))
+                        .foregroundStyle(palette.ink0Color)
+                    Text(detail)
+                        .font(.ui(11.5))
+                        .foregroundStyle(palette.ink3Color)
+                        .multilineTextAlignment(.leading)
+                }
+
+                Spacer(minLength: 0)
+
+                if chevron {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(palette.ink3Color.opacity(0.7))
+                        .accessibilityHidden(true)
+                }
+            }
+            .padding(.vertical, 12)
+            .contentShape(Rectangle())
+        }
     }
 
     private func statusLine(_ status: String) -> some View {
@@ -153,15 +254,20 @@ struct SettingsView: View {
             .transition(.opacity.combined(with: .move(edge: .top)))
     }
 
-    private func load() async {
-        if let settings: LibrarySettings = try? await APIClient.shared.get("/api/settings") {
+    private func read() async {
+        load.begin()
+        do {
+            let settings: LibrarySettings = try await APIClient.shared.get("/api/settings")
             ebookPath = settings.ebookLibraryPath ?? ""
             audiobookPath = settings.audiobookLibraryPath ?? ""
+            load.succeeded()
+        } catch {
+            load.failed(error)
         }
-        isLoading = false
     }
 
     private func save() async {
+        guard load.canSave else { return }
         isSaving = true
         defer { isSaving = false }
         let body = LibrarySettings(
