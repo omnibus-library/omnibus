@@ -1,9 +1,11 @@
 //! Queueing an event's notifications on the transaction of the change that caused it, one
 //! `queued` row per enabled connection subscribed to the event. Run inside a savepoint, so
 //! a failure here is undone alone and logged: a notification is never worth the change it
-//! reports. The request search calls it as a request reaches "Choose a version".
+//! reports. The request search calls it as a request reaches "Choose a version". A request
+//! that arrives again replaces what still waits for it, so each connection holds at most one
+//! unsent notification per request, telling the latest.
 
-use omnibus_shared::{EbookMetadata, RequestKind};
+use omnibus_shared::{EbookMetadata, NotificationEvent, RequestKind};
 use sqlx::{Connection, Row, SqliteConnection};
 
 use super::event::{Event, RequestNeedsChooser};
@@ -12,7 +14,8 @@ use super::NotifyError;
 const NOW: &str = "strftime('%s', 'now')";
 
 /// Queue a "request needs a chooser" notification of request `request_id` for every enabled
-/// connection subscribed to it, unless its requester may pick a version. On the caller's
+/// connection subscribed to it, unless its requester may pick a version, in place of any
+/// still waiting from the request's earlier arrival. On the caller's
 /// transaction, so it is queued once per arrival and only if the arrival commits; a failure
 /// is logged and costs the caller nothing. `book` is the requested book as shown, read
 /// before the transaction. Returns how many were queued.
@@ -54,6 +57,7 @@ async fn chooser_rows(
     request_id: i64,
     book: Option<&EbookMetadata>,
 ) -> Result<u64, NotifyError> {
+    drop_waiting_for(conn, request_id).await?;
     let row = sqlx::query(
         "SELECT q.book_uuid, q.kind, u.is_admin, u.can_choose_request_versions,
                 COALESCE(u.display_name, u.username) AS requester,
@@ -92,6 +96,22 @@ async fn chooser_rows(
         versions: row.try_get("versions")?,
     });
     queue(conn, &event).await
+}
+
+/// Delete the "needs a chooser" notifications still queued for request `request_id`.
+async fn drop_waiting_for(conn: &mut SqliteConnection, request_id: i64) -> Result<(), NotifyError> {
+    // An unreadable payload reads as no request rather than failing the caller.
+    sqlx::query(
+        "DELETE FROM notification_deliveries
+          WHERE state = 'queued' AND event = ?1
+            AND json_extract(CASE WHEN json_valid(payload) THEN payload ELSE '{}' END,
+                             '$.request_id') = ?2",
+    )
+    .bind(NotificationEvent::RequestNeedsChooser.as_str())
+    .bind(request_id)
+    .execute(&mut *conn)
+    .await?;
+    Ok(())
 }
 
 /// One `queued` row of `event` for every enabled connection subscribed to it.
