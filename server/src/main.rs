@@ -150,6 +150,9 @@ mod server {
         // Seed the Calibre ebook-convert path from OMNIBUS_EBOOK_CONVERT_PATH
         // only when none is saved (settings wins; env is the fallback).
         omnibus_db::seed_ebook_convert_path_from_env(&pool).await?;
+        // Seed the public server URL from OMNIBUS_PUBLIC_URL only when none is
+        // saved; an invalid value is logged and skipped, never fatal.
+        omnibus_db::seed_public_url_from_env(&pool).await?;
 
         // Recovery hook: promote the named user to admin if
         // OMNIBUS_INITIAL_ADMIN is set. No-op otherwise. Logs on

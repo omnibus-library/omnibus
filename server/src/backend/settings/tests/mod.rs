@@ -3,5 +3,6 @@
 
 mod crud;
 mod library_config;
+mod public_url;
 mod scan_triggers;
 mod toggles;

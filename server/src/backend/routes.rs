@@ -29,6 +29,7 @@ pub(super) fn content_routes() -> OpenApiRouter<AppState> {
             settings::get_ebook_convert,
             settings::post_ebook_convert
         ))
+        .routes(routes!(settings::get_public_url, settings::post_public_url))
         .routes(routes!(
             settings::get_metadata_precedence,
             settings::post_metadata_precedence
