@@ -14,8 +14,7 @@ use super::super::*;
 #[tokio::test]
 async fn api_get_library_returns_empty_sections_when_paths_not_configured() {
     let (app, _state, pool) = fixture().await;
-    let user = auth_test_support::create_user(&pool, "alice").await;
-    let token = auth_test_support::bearer_token(&pool, user.id).await;
+    let token = admin_token(&pool).await;
 
     let response = app
         .oneshot(get_with_bearer("/api/library", &token))
@@ -29,35 +28,6 @@ async fn api_get_library_returns_empty_sections_when_paths_not_configured() {
     assert_eq!(contents.ebooks.total_files, 0);
     assert!(contents.audiobooks.path.is_none());
     assert_eq!(contents.audiobooks.total_files, 0);
-}
-
-#[tokio::test]
-async fn api_get_library_reports_error_for_nonexistent_path() {
-    let (_, _, pool) = fixture().await;
-    db::set_settings(
-        &pool,
-        &Settings {
-            ebook_library_path: Some("/does/not/exist/omnibus_test".to_string()),
-            audiobook_library_path: None,
-            scan_interval_hours: None,
-        },
-    )
-    .await
-    .expect("set should succeed");
-    let user = auth_test_support::create_user(&pool, "alice").await;
-    let token = auth_test_support::bearer_token(&pool, user.id).await;
-    let app = crate::backend::rest_router(AppState::new(pool));
-
-    let response = app
-        .oneshot(get_with_bearer("/api/library", &token))
-        .await
-        .expect("request should succeed");
-    assert_eq!(response.status(), StatusCode::OK);
-
-    let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-    let contents: omnibus_shared::LibraryContents = serde_json::from_slice(&bytes).unwrap();
-    assert!(contents.ebooks.error.is_some());
-    assert!(contents.audiobooks.path.is_none());
 }
 
 /// The raw body and parsed contents of `GET /api/library` with a missing ebook folder.
@@ -96,6 +66,7 @@ async fn api_get_library_hides_the_folder_path_from_a_reader() {
 
     assert!(contents.ebooks.path.is_none());
     assert!(contents.ebooks.error.is_some());
+    assert!(contents.audiobooks.path.is_none());
     assert!(!body.contains("/does/not/exist"), "{body}");
 }
 
