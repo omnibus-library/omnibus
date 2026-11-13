@@ -42,8 +42,6 @@ struct NtfyDraft: Equatable, Sendable {
     /// The address and username the saved secret belongs to.
     private(set) var savedServerURL: String?
     private(set) var savedUsername: String?
-    /// The saved connection's confirmed on/off value, echoed on save; never edited here.
-    private(set) var savedEnabled: Bool?
 
     static let nameLimit = 100
 
@@ -61,7 +59,6 @@ struct NtfyDraft: Equatable, Sendable {
         savedID = connection.id
         savedServerURL = settings.serverURL
         savedUsername = settings.username
-        savedEnabled = connection.enabled
         name = connection.name
         events = connection.events
         serverURL = settings.serverURL
@@ -165,7 +162,6 @@ struct NtfyDraft: Equatable, Sendable {
     var input: NotificationConnectionInput {
         NotificationConnectionInput(
             name: name.trimmingCharacters(in: .whitespacesAndNewlines),
-            enabled: savedEnabled,
             events: events,
             settings: .ntfy(settings)
         )

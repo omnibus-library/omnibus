@@ -178,8 +178,7 @@ final class NotificationsModel {
     }
 
     /// Whether a row may open its edit sheet: settings this build knows, and no
-    /// switch saving. The sheet echoes the row's on/off value, so it must not open
-    /// on an unconfirmed one; a refused switch would be saved back.
+    /// switch saving, so the switch's answer and a save's can't race to fill the row.
     func canEdit(_ connection: NotificationConnection) -> Bool {
         NotificationsFlow.isEditable(connection) && !toggling.contains(connection.id)
     }

@@ -213,21 +213,14 @@ struct NotificationsCodecTests {
         #expect(try encodedObject(draft.input)["name"] as? String == "Renamed")
     }
 
-    @Test("an edit sends the saved on/off value, so a server that reads a missing one as on keeps it")
-    func editEchoesSavedEnabled() throws {
-        let saved = try savedConnections()
-        #expect(!saved[1].enabled)
-        var off = try #require(NtfyDraft(editing: saved[1]))
-        off.name = "Renamed"
-        let on = try #require(NtfyDraft(editing: saved[0]))
-
-        #expect(try encodedObject(off.input)["enabled"] as? Bool == false)
-        #expect(try encodedObject(on.input)["enabled"] as? Bool == true)
-    }
-
-    @Test("a new connection sends no enabled key, so every server starts it on")
-    func createOmitsEnabled() throws {
+    @Test("a save never sends enabled, so only the row's switch turns a connection on or off")
+    func saveNeverSendsEnabled() throws {
+        let off = try savedConnections()[1]
+        #expect(!off.enabled)
+        let edit = try #require(NtfyDraft(editing: off))
         let create = NtfyDraft(offering: [.requestNeedsChooser])
+
+        #expect(!(try encodedObject(edit.input)).keys.contains("enabled"))
         #expect(!(try encodedObject(create.input)).keys.contains("enabled"))
     }
 
