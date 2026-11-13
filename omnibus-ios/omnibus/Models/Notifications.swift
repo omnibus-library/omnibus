@@ -265,13 +265,26 @@ enum ConnectionSettingsInput: Encodable, Hashable, Sendable {
     }
 }
 
-/// A connection to create, or everything to replace a saved one with. It never
-/// carries `enabled`: the server starts a new connection on and keeps a saved
-/// one's value, so only the row's switch turns a connection on or off.
+/// A connection to create, or everything to replace a saved one with. A create
+/// leaves `enabled` out, so every server starts it on; a save sends the saved
+/// connection's confirmed value, so a server that reads a missing one as on
+/// keeps it. Only the row's switch changes it.
 struct NotificationConnectionInput: Encodable, Hashable, Sendable {
     var name: String
+    var enabled: Bool?
     var events: [NotificationEventName]
     var settings: ConnectionSettingsInput
+
+    enum CodingKeys: String, CodingKey { case name, enabled, events, settings }
+
+    // A missing key, never null: a server that predates the optional field refuses null.
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(name, forKey: .name)
+        try container.encodeIfPresent(enabled, forKey: .enabled)
+        try container.encode(events, forKey: .events)
+        try container.encode(settings, forKey: .settings)
+    }
 }
 
 /// Turns a saved connection on or off, and changes nothing else about it.
