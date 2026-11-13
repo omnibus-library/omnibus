@@ -137,6 +137,9 @@ test.describe("notifications section", () => {
       const created: NotificationConnection = await response.json();
       createdNotificationIds.add(created.id);
       expect(request.postDataJSON()).toEqual(input);
+      // The form has no on/off switch; the server starts a new connection on.
+      expect(request.postDataJSON()).not.toHaveProperty("enabled");
+      expect(created.enabled).toBe(true);
       expect(created.settings.token_set).toBe(true);
     });
 
@@ -251,6 +254,7 @@ test.describe("notifications section", () => {
     storedNotificationConnection,
   }) => {
     const { notifications: section } = adminPage;
+    const { modal } = section;
     const connection = await ntfyConnection();
 
     await test.step("open the notifications section", async () => {
@@ -269,6 +273,21 @@ test.describe("notifications section", () => {
       const stored = await storedNotificationConnection(connection.id);
       expect(stored?.enabled).toBe(false);
       expect(stored?.settings.token_set).toBe(true);
+    });
+
+    await test.step("save its edit form, which sends no on/off value", async () => {
+      await section.edit(connection.name);
+      await expectMutation(
+        notifications.update(savedWithoutSecrets(connection)),
+        () => modal.save(),
+      );
+      await expect(modal.dialog).toBeHidden();
+    });
+
+    await test.step("check it is still off", async () => {
+      await expect(section.rowSwitch(connection.name)).not.toBeChecked();
+      const stored = await storedNotificationConnection(connection.id);
+      expect(stored?.enabled).toBe(false);
     });
   });
 

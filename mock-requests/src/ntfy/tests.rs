@@ -297,7 +297,7 @@ fn record_keeps_only_the_newest_publishes_past_the_bound() {
 fn connection(mock: &Running) -> NotificationConnectionInput {
     NotificationConnectionInput {
         name: "Mock ntfy".to_string(),
-        enabled: true,
+        enabled: Some(true),
         events: vec![NotificationEvent::RequestNeedsChooser],
         settings: ntfy_input(mock, NtfyAuth::Token, NTFY_TOKEN),
     }

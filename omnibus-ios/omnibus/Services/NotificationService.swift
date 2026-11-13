@@ -58,7 +58,8 @@ enum NotificationService {
         try await send(Routes.create, body: input)
     }
 
-    /// Replaces every field; a secret the input leaves out keeps the saved one.
+    /// Replaces its fields; a secret the input leaves out keeps the saved one, and
+    /// the on/off value is never sent, so it stays as the switch left it.
     static func update(id: Int64, _ input: NotificationConnectionInput) async throws -> NotificationConnection {
         try await send(Routes.update(id: id), body: input)
     }

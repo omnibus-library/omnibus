@@ -1,5 +1,6 @@
-//! The connection store: create, get, update and delete with their checks, the secret kept
-//! across an update, the list's order and last delivery, and the cascade to the outbox.
+//! The connection store: create, get, update and delete with their checks, the secret and
+//! on/off value kept across an update, the list's order and last delivery, and the cascade
+//! to the outbox.
 
 use omnibus_shared::{ConnectionSettingsStatus, NotificationConnectionInput, NotificationEvent};
 
@@ -46,6 +47,26 @@ async fn finished(pool: &SqlitePool, id: i64, state: &str, at: i64, error: Optio
     .unwrap();
 }
 
+/// A notification still waiting to be sent on connection `id`.
+async fn queued(pool: &SqlitePool, id: i64) {
+    sqlx::query(
+        "INSERT INTO notification_deliveries (connection_id, event, payload, state)
+         VALUES (?, 'request_needs_chooser', '{}', 'queued')",
+    )
+    .bind(id)
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+async fn queued_count(pool: &SqlitePool, id: i64) -> usize {
+    deliveries(pool)
+        .await
+        .iter()
+        .filter(|d| d.connection_id == id && d.state == "queued")
+        .count()
+}
+
 mod create_connection {
     use super::*;
 
@@ -67,6 +88,20 @@ mod create_connection {
             saved_token(&pool, created.id).await.as_deref(),
             Some("tk_secret")
         );
+    }
+
+    #[tokio::test]
+    async fn create_connection_saves_it_off_when_enabled_is_false() {
+        let pool = pool().await;
+        let input = NotificationConnectionInput {
+            enabled: Some(false),
+            ..connection_input("Phone", ntfy_input(URL))
+        };
+
+        let created = create_connection(&pool, &input).await.unwrap();
+
+        assert!(!created.enabled);
+        assert!(!get_connection(&pool, created.id).await.unwrap().enabled);
     }
 
     #[tokio::test]
@@ -149,7 +184,7 @@ mod update_connection {
         let pool = pool().await;
         let id = with_token(&pool).await;
         let input = NotificationConnectionInput {
-            enabled: false,
+            enabled: Some(false),
             events: Vec::new(),
             ..connection_input("Tablet", token_input(URL, None))
         };
@@ -161,6 +196,71 @@ mod update_connection {
         assert!(updated.events.is_empty());
         assert!(token_set(&updated));
         assert_eq!(saved_token(&pool, id).await.as_deref(), Some("tk_saved"));
+    }
+
+    #[tokio::test]
+    async fn update_connection_keeps_the_saved_on_off_value_when_enabled_is_left_out() {
+        let pool = pool().await;
+        let on = with_token(&pool).await;
+        let off = with_token(&pool).await;
+        set_connection_enabled(&pool, off, false).await.unwrap();
+        let input = connection_input("Renamed", token_input(URL, None));
+
+        let kept_on = update_connection(&pool, on, &input).await.unwrap();
+        let kept_off = update_connection(&pool, off, &input).await.unwrap();
+
+        assert!(kept_on.enabled);
+        assert!(!kept_off.enabled);
+        assert_eq!(kept_off.name, "Renamed");
+        assert!(get_connection(&pool, on).await.unwrap().enabled);
+        assert!(!get_connection(&pool, off).await.unwrap().enabled);
+    }
+
+    #[tokio::test]
+    async fn update_connection_keeps_what_is_queued_when_enabled_is_left_out() {
+        let pool = pool().await;
+        let id = with_token(&pool).await;
+        queued(&pool, id).await;
+        let input = connection_input("Renamed", token_input(URL, None));
+
+        update_connection(&pool, id, &input).await.unwrap();
+
+        assert_eq!(queued_count(&pool, id).await, 1);
+    }
+
+    #[tokio::test]
+    async fn update_connection_drops_what_is_queued_when_enabled_is_false() {
+        let pool = pool().await;
+        let id = with_token(&pool).await;
+        let other = with_token(&pool).await;
+        queued(&pool, id).await;
+        queued(&pool, other).await;
+        let input = NotificationConnectionInput {
+            enabled: Some(false),
+            ..connection_input("Phone", token_input(URL, None))
+        };
+
+        let updated = update_connection(&pool, id, &input).await.unwrap();
+
+        assert!(!updated.enabled);
+        assert_eq!(queued_count(&pool, id).await, 0);
+        assert_eq!(queued_count(&pool, other).await, 1);
+    }
+
+    #[tokio::test]
+    async fn update_connection_turns_a_connection_on_when_enabled_is_true() {
+        let pool = pool().await;
+        let id = with_token(&pool).await;
+        set_connection_enabled(&pool, id, false).await.unwrap();
+        let input = NotificationConnectionInput {
+            enabled: Some(true),
+            ..connection_input("Phone", token_input(URL, None))
+        };
+
+        let updated = update_connection(&pool, id, &input).await.unwrap();
+
+        assert!(updated.enabled);
+        assert!(get_connection(&pool, id).await.unwrap().enabled);
     }
 
     #[tokio::test]
@@ -326,14 +426,7 @@ mod list_connections {
             Some("ntfy refused the sign-in."),
         )
         .await;
-        sqlx::query(
-            "INSERT INTO notification_deliveries (connection_id, event, payload, state)
-             VALUES (?, 'request_needs_chooser', '{}', 'queued')",
-        )
-        .bind(phone)
-        .execute(&pool)
-        .await
-        .unwrap();
+        queued(&pool, phone).await;
 
         let listed = list_connections(&pool).await.unwrap();
 

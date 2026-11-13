@@ -23,10 +23,13 @@ export interface NtfySettingsInput {
   include_details: boolean;
 }
 
-/** `POST` and `PUT /api/admin/notifications/connections`. */
+/**
+ * `POST` and `PUT /api/admin/notifications/connections`. The web form never sends
+ * `enabled`: left out, a create starts on and a save keeps the saved value.
+ */
 export interface NotificationConnectionInput {
   name: string;
-  enabled: boolean;
+  enabled?: boolean;
   events: string[];
   settings: NtfySettingsInput;
 }
@@ -73,7 +76,6 @@ export function buildNtfyConnection(
   const suffix = uniqueSuffix();
   return {
     name: `E2E ntfy ${suffix}`,
-    enabled: true,
     events: [],
     settings: {
       kind: "ntfy",
@@ -107,7 +109,6 @@ export function savedWithoutSecrets(
   const { settings } = connection;
   return {
     name: connection.name,
-    enabled: connection.enabled,
     events: connection.events,
     settings: {
       kind: "ntfy",

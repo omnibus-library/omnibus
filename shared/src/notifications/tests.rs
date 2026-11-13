@@ -28,12 +28,35 @@ fn ntfy_settings_input_fills_priority_tags_and_details_when_left_out() {
 }
 
 #[test]
-fn notification_connection_input_is_enabled_when_enabled_is_left_out() {
-    let body = json!({ "name": "Phone", "events": [], "settings": minimal_ntfy() });
+fn notification_connection_input_reads_enabled_as_none_when_left_out_or_null() {
+    for body in [
+        json!({ "name": "Phone", "events": [], "settings": minimal_ntfy() }),
+        json!({ "name": "Phone", "enabled": null, "events": [], "settings": minimal_ntfy() }),
+    ] {
+        let parsed: NotificationConnectionInput = serde_json::from_value(body).unwrap();
+
+        assert_eq!(parsed.enabled, None);
+    }
+}
+
+#[test]
+fn notification_connection_input_keeps_an_enabled_value_that_is_sent() {
+    let body =
+        json!({ "name": "Phone", "enabled": false, "events": [], "settings": minimal_ntfy() });
 
     let parsed: NotificationConnectionInput = serde_json::from_value(body).unwrap();
 
-    assert!(parsed.enabled);
+    assert_eq!(parsed.enabled, Some(false));
+}
+
+#[test]
+fn notification_connection_input_serializes_without_enabled_when_it_is_none() {
+    let body = json!({ "name": "Phone", "events": [], "settings": minimal_ntfy() });
+    let parsed: NotificationConnectionInput = serde_json::from_value(body).unwrap();
+
+    let value = serde_json::to_value(&parsed).unwrap();
+
+    assert!(value.get("enabled").is_none(), "{value}");
 }
 
 #[test]

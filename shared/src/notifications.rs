@@ -156,9 +156,12 @@ pub struct NtfySettingsStatus {
 pub struct NotificationConnectionInput {
     /// A name to tell the connection by, 1 to 100 characters once trimmed.
     pub name: String,
-    /// Whether the connection sends anything. True when left out.
-    #[serde(default = "default_true")]
-    pub enabled: bool,
+    /// Whether the connection sends anything. Null or left out turns a new connection on and
+    /// keeps a saved one's value, so saving its other fields can't undo a switch flipped
+    /// meanwhile; `PATCH` is the way to switch one. False, on a save, deletes every
+    /// notification still waiting to be sent on it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
     /// The events the connection is sent. May be empty; a repeated event counts once. An
     /// event the server doesn't offer now is saved, and sent once it does.
     pub events: Vec<NotificationEvent>,

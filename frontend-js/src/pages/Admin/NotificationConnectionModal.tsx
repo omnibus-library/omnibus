@@ -414,15 +414,6 @@ export function NotificationConnectionModal({
             ))
           )}
         </fieldset>
-        <label className="settings-switch">
-          <input
-            type="checkbox"
-            role="switch"
-            aria-checked={form.watch("enabled")}
-            {...form.register("enabled")}
-          />
-          Send notifications through this connection
-        </label>
         {errors.root?.message && (
           <p
             role="alert"

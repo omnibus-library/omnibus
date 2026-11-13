@@ -269,6 +269,34 @@ export const TurnsAConnectionOff: Story = {
   },
 };
 
+export const SavingTheFormLeavesTheSwitchAlone: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const shared = await row(canvas, "Shared topic");
+    await userEvent.click(
+      within(shared).getByRole("button", { name: "Edit Shared topic" }),
+    );
+    const dialog = await canvas.findByRole("dialog", {
+      name: "Edit Shared topic",
+    });
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Save connection" }),
+    );
+
+    // The row's switch is the only on/off control: a save sends no `enabled`.
+    await waitFor(() => expect(writes.updated).toHaveLength(1));
+    await expect(writes.updated[0]?.body).not.toHaveProperty("enabled");
+    await expect(writes.switched).toEqual([]);
+    await waitFor(() =>
+      expect(canvas.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    await expect(
+      within(await row(canvas, "Shared topic")).getByRole("switch", {
+        name: "Send notifications to Shared topic",
+      }),
+    ).not.toBeChecked();
+  },
+};
+
 export const ShowsTheConnectionAsTheServerHoldsItAfterTheSwitch: Story = {
   beforeEach({ msw }) {
     reads = 0;

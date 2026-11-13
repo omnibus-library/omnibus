@@ -265,10 +265,11 @@ enum ConnectionSettingsInput: Encodable, Hashable, Sendable {
     }
 }
 
-/// A connection to create, or everything to replace a saved one with.
+/// A connection to create, or everything to replace a saved one with. It never
+/// carries `enabled`: the server starts a new connection on and keeps a saved
+/// one's value, so only the row's switch turns a connection on or off.
 struct NotificationConnectionInput: Encodable, Hashable, Sendable {
     var name: String
-    var enabled: Bool
     var events: [NotificationEventName]
     var settings: ConnectionSettingsInput
 }

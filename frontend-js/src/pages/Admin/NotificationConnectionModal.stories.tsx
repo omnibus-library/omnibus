@@ -92,10 +92,11 @@ export const AddsAConnection: Story = {
     await userEvent.click(scope.getByRole("button", { name: SAVE }));
 
     await waitFor(() => expect(args.onSaved).toHaveBeenCalledOnce());
+    // The form has no on/off switch: the server starts a new connection on.
+    await expect(writes.created[0]).not.toHaveProperty("enabled");
     await expect(writes.created).toEqual([
       {
         name: "Kitchen tablet",
-        enabled: true,
         events: ["request_needs_chooser"],
         settings: {
           kind: "ntfy",
@@ -112,8 +113,35 @@ export const AddsAConnection: Story = {
     await expect(args.onSaved).toHaveBeenCalledWith(
       expect.objectContaining({
         name: "Kitchen tablet",
+        enabled: true,
         settings: expect.objectContaining({ token_set: true }),
       }),
+    );
+  },
+};
+
+/** The row's switch is the only on/off control, so the form has none and a save sends no `enabled`. */
+export const EditingAConnectionThatIsOffKeepsItOff: Story = {
+  args: { editing: { ...PHONE, enabled: false } },
+  beforeEach({ msw }) {
+    msw.use(
+      ...notificationHandlers([{ ...PHONE, enabled: false }], { writes }),
+    );
+  },
+  play: async ({ args, canvas, userEvent }) => {
+    const dialog = await dialogOf(canvas, "Edit Phone");
+    const scope = within(dialog);
+    // The only switch left is the message-details one.
+    await expect(scope.getAllByRole("switch")).toEqual([
+      scope.getByRole("switch", { name: "Include book and requester details" }),
+    ]);
+
+    await userEvent.click(scope.getByRole("button", { name: SAVE }));
+
+    await waitFor(() => expect(args.onSaved).toHaveBeenCalledOnce());
+    await expect(writes.updated[0]?.body).not.toHaveProperty("enabled");
+    await expect(args.onSaved).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 7, enabled: false }),
     );
   },
 };
@@ -176,9 +204,9 @@ export const EditingKeepsTheSavedToken: Story = {
     await expect(writes.updated).toHaveLength(1);
     const { id, body } = writes.updated[0] ?? {};
     await expect(id).toBe(7);
+    await expect(body).not.toHaveProperty("enabled");
     await expect(body).toEqual({
       name: "My phone",
-      enabled: true,
       events: ["request_needs_chooser"],
       settings: {
         kind: "ntfy",

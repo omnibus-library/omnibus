@@ -163,15 +163,19 @@ describe("parseTags", () => {
 });
 
 describe("connectionInputOf", () => {
-  it("trims the name and carries the events and switch", () => {
-    expect(
-      connectionInputOf({ ...DRAFT, enabled: false, tags: "books, bell" }),
-    ).toEqual({
+  it("trims the name and carries the events", () => {
+    expect(connectionInputOf({ ...DRAFT, tags: "books, bell" })).toEqual({
       name: "Phone",
-      enabled: false,
       events: ["request_needs_chooser"],
       settings: expect.objectContaining({ tags: ["books", "bell"] }),
     });
+  });
+
+  it("leaves out enabled, so a save never turns a connection on or off", () => {
+    expect(connectionInputOf(DRAFT)).not.toHaveProperty("enabled");
+    expect(
+      connectionInputOf(draftOf(aConnection({ enabled: false }))),
+    ).not.toHaveProperty("enabled");
   });
 
   it("keeps an event the server doesn't offer now", () => {
@@ -196,7 +200,6 @@ describe("draftOf", () => {
       tags: "books, bell",
       include_details: false,
       events: ["request_needs_chooser"],
-      enabled: true,
     });
   });
 
@@ -208,7 +211,6 @@ describe("draftOf", () => {
 
     expect(connectionInputOf(draftOf(connection))).toEqual({
       name: "Phone",
-      enabled: false,
       events: ["request_needs_chooser"],
       settings: {
         kind: "ntfy",

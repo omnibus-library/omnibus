@@ -184,7 +184,7 @@ struct NotificationsCodecTests {
 
         let object = try encodedObject(draft.input)
         #expect(object["name"] as? String == "Ada\u{2019}s phone")
-        #expect(object["enabled"] as? Bool == true)
+        #expect(!object.keys.contains("enabled"))
         #expect(object["events"] as? [String] == ["request_needs_chooser"])
 
         let settings = try encodedSettings(draft.input)
@@ -211,6 +211,17 @@ struct NotificationsCodecTests {
         #expect(!settings.keys.contains("password"))
         #expect(settings["auth"] as? String == "token")
         #expect(try encodedObject(draft.input)["name"] as? String == "Renamed")
+    }
+
+    @Test("a save never sends enabled, so only the row's switch turns a connection on or off")
+    func saveNeverSendsEnabled() throws {
+        let off = try savedConnections()[1]
+        #expect(!off.enabled)
+        let edit = try #require(NtfyDraft(editing: off))
+        let create = NtfyDraft(offering: [.requestNeedsChooser])
+
+        #expect(!(try encodedObject(edit.input)).keys.contains("enabled"))
+        #expect(!(try encodedObject(create.input)).keys.contains("enabled"))
     }
 
     @Test("an edit that leaves the password blank sends the username and no password key")

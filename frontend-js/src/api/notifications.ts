@@ -66,7 +66,7 @@ export async function addNotificationConnection(
   return res.data;
 }
 
-/** Replaces every field of a connection; a secret left out keeps the saved one. */
+/** Replaces a connection's fields; a secret, or `enabled`, left out keeps the saved one. */
 export async function saveNotificationConnection(
   id: number,
   input: NotificationConnectionInput,

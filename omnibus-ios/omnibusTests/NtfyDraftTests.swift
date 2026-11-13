@@ -23,7 +23,7 @@ private func valid() -> NtfyDraft {
 
 @Suite("ntfy form")
 struct NtfyDraftTests {
-    @Test("a new form is sent every offered event, signs in with nothing, and starts on and at Default")
+    @Test("a new form is sent every offered event, signs in with nothing, and starts at Default")
     func newFormDefaults() {
         let draft = NtfyDraft(offering: [.requestNeedsChooser])
         #expect(!draft.isEditing)
@@ -31,7 +31,6 @@ struct NtfyDraftTests {
         #expect(draft.auth == .none)
         #expect(draft.priority == 3)
         #expect(NotificationsFlow.priorityName(draft.priority) == "Default")
-        #expect(draft.enabled)
         #expect(draft.includeDetails)
         #expect(draft.testRequest.id == nil)
     }
@@ -51,7 +50,6 @@ struct NtfyDraftTests {
         let basic = try #require(NtfyDraft(editing: saved[1]))
         #expect(basic.username == "sam")
         #expect(basic.keepsSavedPassword)
-        #expect(!basic.enabled)
         #expect(!basic.includeDetails)
     }
 

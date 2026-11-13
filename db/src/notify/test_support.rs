@@ -51,11 +51,12 @@ pub fn basic_input(
     }
 }
 
-/// An enabled connection named `name`, subscribed to the request event.
+/// A connection named `name`, subscribed to the request event, its `enabled` left out as
+/// the web and iOS forms send it: on when created, unchanged when saved.
 pub fn connection_input(name: &str, settings: NtfySettingsInput) -> NotificationConnectionInput {
     NotificationConnectionInput {
         name: name.to_string(),
-        enabled: true,
+        enabled: None,
         events: vec![NotificationEvent::RequestNeedsChooser],
         settings: ConnectionSettingsInput::Ntfy(settings),
     }
@@ -82,7 +83,7 @@ pub async fn save_connection(
     events: &[NotificationEvent],
 ) -> i64 {
     let input = NotificationConnectionInput {
-        enabled,
+        enabled: Some(enabled),
         events: events.to_vec(),
         ..connection_input(name, ntfy_input(server_url))
     };

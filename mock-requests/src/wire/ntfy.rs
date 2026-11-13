@@ -115,7 +115,7 @@ fn is_the_mocks(settings: &ConnectionSettingsStatus) -> bool {
 fn input_for(mock_origin: &str) -> NotificationConnectionInput {
     NotificationConnectionInput {
         name: CONNECTION_NAME.to_string(),
-        enabled: true,
+        enabled: Some(true),
         events: vec![NotificationEvent::RequestNeedsChooser],
         settings: ConnectionSettingsInput::Ntfy(NtfySettingsInput {
             server_url: format!("{}{PATH}", mock_origin.trim_end_matches('/')),
