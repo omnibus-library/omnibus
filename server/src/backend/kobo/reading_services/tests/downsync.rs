@@ -403,6 +403,43 @@ async fn web_side_delete_flows_down_as_a_change_report_and_omission() {
 }
 
 #[tokio::test]
+async fn web_side_delete_reaches_a_device_that_never_uploaded_highlights() {
+    let (app, pool, user, device) = fixture().await;
+    let (uuid, _dir, _guard) = disk_book(&pool, "never-uploaded").await;
+    db::kobo::annotations::mark_downloaded(&pool, device, &uuid)
+        .await
+        .unwrap();
+    let web_id = create_web_highlight(&pool, user, &uuid, WEB_CFI).await;
+    // What the highlight's create request spawns, so the row has a Kobo anchor to serve.
+    db::annotations::downsync_book_annotations(&pool, None, user, &uuid)
+        .await
+        .unwrap();
+    assert_eq!(check_for_changes(&app).await, vec![uuid.clone()]);
+    let res = app
+        .clone()
+        .oneshot(request("GET", &annotations_uri(&uuid), Some(HW_ID), None))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let _ = body_json(res).await;
+    assert!(check_for_changes(&app).await.is_empty());
+
+    db::annotations::delete_highlight(&pool, user, web_id)
+        .await
+        .unwrap();
+
+    assert_eq!(check_for_changes(&app).await, vec![uuid.clone()]);
+    let res = app
+        .clone()
+        .oneshot(request("GET", &annotations_uri(&uuid), Some(HW_ID), None))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    assert_eq!(body_json(res).await["annotations"], json!([]));
+    assert!(check_for_changes(&app).await.is_empty(), "drain re-acks");
+}
+
+#[tokio::test]
 async fn web_side_recolor_and_note_flow_down_on_the_next_get() {
     let (app, pool, user, device) = fixture().await;
     let uuid = seed_synced_ebook(&pool, "dune.epub", "Dune", "Herbert").await;

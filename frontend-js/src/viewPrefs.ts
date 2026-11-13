@@ -1,6 +1,11 @@
 import { useCallback, useRef, useState } from "react";
 import { z } from "zod";
 import { type FilterClause, FilterClauseSchema, SortDir, SortKey } from "./api";
+import {
+  MAX_FILTER_TOTAL_VALUES,
+  MAX_FILTER_VALUES,
+  MAX_VALUE_LENGTH,
+} from "./components/FilterBar/filters";
 
 // Saved in localStorage per route. Anything unreadable is the default.
 
@@ -84,6 +89,8 @@ export function loadPrefs(path: string): Prefs {
   if (!parsed.success) return DEFAULT_PREFS;
   const stored = parsed.data;
   const { filters } = stored;
+  // The caps `legacy_clause` applies in shared/src/view_filters.rs, so no clause the API refuses loads.
+  let budget = MAX_FILTER_TOTAL_VALUES;
   const legacy = (
     [
       ["author", filters.authors],
@@ -92,23 +99,24 @@ export function loadPrefs(path: string): Prefs {
       ["tag", filters.tags],
       ["genre", filters.genres],
     ] as const
-  )
-    // The caps `legacy_clause` applies in shared/src/view_filters.rs, so no clause the API refuses loads.
-    .map(([field, values]) => ({
-      field,
-      values: values
-        .filter((v) => v.trim() !== "" && [...v].length <= 512)
-        .slice(0, 64),
-    }))
-    .filter(({ values }) => values.length > 0)
-    .map(
-      ({ field, values }): FilterClause => ({ field, mode: "include", values }),
-    );
+  ).flatMap(([field, values]): FilterClause[] => {
+    const kept = values
+      .filter((v) => v.trim() !== "" && [...v].length <= MAX_VALUE_LENGTH)
+      .slice(0, Math.min(MAX_FILTER_VALUES, budget));
+    budget -= kept.length;
+    return kept.length > 0 ? [{ field, mode: "include", values: kept }] : [];
+  });
+  // Saved clauses get the same budget, so a filter saved before the total cap still loads.
+  const saved = filters.clauses.flatMap((clause): FilterClause[] => {
+    const values = clause.values.slice(0, Math.min(MAX_FILTER_VALUES, budget));
+    budget -= values.length;
+    return values.length > 0 ? [{ ...clause, values }] : [];
+  });
   return {
     view: stored.view_mode,
     sort: stored.sort_key,
     dir: stored.sort_dir,
-    clauses: [...legacy, ...filters.clauses],
+    clauses: [...legacy, ...saved],
     filtersOpen: stored.filters_open,
   };
 }

@@ -11,6 +11,7 @@ import {
   facetValue,
   fieldLabel,
   MAX_FILTER_CLAUSES,
+  pickLimit,
   revealBelow,
   withFieldClause,
   withoutField,
@@ -88,6 +89,7 @@ function Facet({
       {open && (
         <FilterPicker
           initial={clause ?? { field, mode: "include", values: [] }}
+          limit={pickLimit(clauses, field)}
           onApply={(next) => {
             onChange(withFieldClause(clauses, next));
             setOpen(false);

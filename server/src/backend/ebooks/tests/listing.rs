@@ -14,8 +14,7 @@ use super::super::*;
 #[tokio::test]
 async fn api_get_library_returns_empty_sections_when_paths_not_configured() {
     let (app, _state, pool) = fixture().await;
-    let user = auth_test_support::create_user(&pool, "alice").await;
-    let token = auth_test_support::bearer_token(&pool, user.id).await;
+    let token = admin_token(&pool).await;
 
     let response = app
         .oneshot(get_with_bearer("/api/library", &token))
@@ -31,8 +30,8 @@ async fn api_get_library_returns_empty_sections_when_paths_not_configured() {
     assert_eq!(contents.audiobooks.total_files, 0);
 }
 
-#[tokio::test]
-async fn api_get_library_reports_error_for_nonexistent_path() {
+/// The raw body and parsed contents of `GET /api/library` with a missing ebook folder.
+async fn library_with_missing_folder(admin: bool) -> (String, omnibus_shared::LibraryContents) {
     let (_, _, pool) = fixture().await;
     db::set_settings(
         &pool,
@@ -44,8 +43,11 @@ async fn api_get_library_reports_error_for_nonexistent_path() {
     )
     .await
     .expect("set should succeed");
-    let user = auth_test_support::create_user(&pool, "alice").await;
-    let token = auth_test_support::bearer_token(&pool, user.id).await;
+    let token = if admin {
+        admin_token(&pool).await
+    } else {
+        reader_token(&pool).await
+    };
     let app = crate::backend::rest_router(AppState::new(pool));
 
     let response = app
@@ -53,11 +55,33 @@ async fn api_get_library_reports_error_for_nonexistent_path() {
         .await
         .expect("request should succeed");
     assert_eq!(response.status(), StatusCode::OK);
+    let body = body_text(response).await;
+    let contents = serde_json::from_str(&body).unwrap();
+    (body, contents)
+}
 
-    let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-    let contents: omnibus_shared::LibraryContents = serde_json::from_slice(&bytes).unwrap();
+#[tokio::test]
+async fn api_get_library_hides_the_folder_path_from_a_reader() {
+    let (body, contents) = library_with_missing_folder(false).await;
+
+    assert!(contents.ebooks.path.is_none());
     assert!(contents.ebooks.error.is_some());
     assert!(contents.audiobooks.path.is_none());
+    assert!(!body.contains("/does/not/exist"), "{body}");
+}
+
+#[tokio::test]
+async fn api_get_library_shows_the_folder_path_to_an_admin() {
+    let (_, contents) = library_with_missing_folder(true).await;
+
+    assert_eq!(
+        contents.ebooks.path.as_deref(),
+        Some("/does/not/exist/omnibus_test")
+    );
+    assert!(contents
+        .ebooks
+        .error
+        .is_some_and(|e| e.contains("/does/not/exist/omnibus_test")));
 }
 
 #[tokio::test]
@@ -97,8 +121,7 @@ async fn api_get_ebooks_returns_empty_library_for_configured_path_without_index(
     )
     .await
     .expect("set should succeed");
-    let user = auth_test_support::create_user(&pool, "alice").await;
-    let token = auth_test_support::bearer_token(&pool, user.id).await;
+    let token = admin_token(&pool).await;
     let app = crate::backend::rest_router(AppState::new(pool));
 
     let response = app
@@ -280,4 +303,30 @@ async fn api_ebooks_returns_401_when_anonymous() {
     let (app, _, _) = fixture().await;
     let res = app.oneshot(get_anon("/api/ebooks")).await.unwrap();
     assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+}
+
+const FOLDER: &str = "/does/not/exist/omnibus_ebook_test";
+
+/// The full library and a keyset page, the two shapes `GET /api/ebooks` answers in.
+const EBOOK_LISTINGS: [&str; 2] = ["/api/ebooks", "/api/ebooks?limit=1"];
+
+#[tokio::test]
+async fn api_get_ebooks_hides_the_folder_path_from_a_reader_behind_a_stable_key() {
+    for uri in EBOOK_LISTINGS {
+        let (body, first) = library_listing_for(uri, false, FOLDER).await;
+        let (_, second) = library_listing_for(uri, false, FOLDER).await;
+
+        assert!(!body.contains("/does/not/exist"), "{uri}: {body}");
+        assert!(first.path.is_some(), "{uri} keeps a key to scope prefs by");
+        assert_eq!(first.path, second.path, "{uri}: the key must be stable");
+    }
+}
+
+#[tokio::test]
+async fn api_get_ebooks_shows_the_folder_path_to_an_admin() {
+    for uri in EBOOK_LISTINGS {
+        let (_, library) = library_listing_for(uri, true, FOLDER).await;
+
+        assert_eq!(library.path.as_deref(), Some(FOLDER), "{uri}");
+    }
 }

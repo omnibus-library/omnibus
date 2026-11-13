@@ -339,13 +339,14 @@ pub enum KindleSendStatus {
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct LibrarySection {
-    /// The configured folder. Null when none is set.
+    /// The configured folder. Null when none is set, or for a non-admin.
     pub path: Option<String>,
     pub total_files: usize,
     /// One `[extension, count]` pair per file extension Omnibus reads, in a fixed order,
     /// zeros included. Empty when no folder is set.
     pub counts_by_ext: Vec<(String, usize)>,
-    /// Why the folder couldn't be read. Null when it was read.
+    /// Why the folder couldn't be read. Null when it was read. A non-admin gets generic
+    /// text, because the real reason names the folder.
     pub error: Option<String>,
 }
 

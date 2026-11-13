@@ -19,9 +19,9 @@ pub enum KoboAnnotationSyncError {
     Sqlx(#[from] sqlx::Error),
 }
 
-/// Whether this device has had its first clean PATCH for this book ingested.
-/// Until then, `GET .../annotations` must not answer an empty-but-valid set —
-/// delete-by-omission would wipe highlights made before wireless sync existed.
+/// Whether this device has had its first clean PATCH for this book ingested. Tests use it
+/// to read adoption back; the GET guards on [`may_serve_empty`], which also counts an ack.
+#[cfg(any(test, feature = "test-support"))]
 pub async fn is_adopted(
     pool: &SqlitePool,
     device_id: i64,
@@ -36,6 +36,30 @@ pub async fn is_adopted(
     .fetch_optional(pool)
     .await?;
     Ok(adopted.flatten().is_some())
+}
+
+/// Whether this pair may be served an empty set: it adopted, or it already acked a
+/// non-empty one, so an empty answer can only remove what the device was sent.
+pub async fn may_serve_empty(
+    pool: &SqlitePool,
+    device_id: i64,
+    book_uuid: &str,
+) -> Result<bool, KoboAnnotationSyncError> {
+    let row: Option<(Option<i64>, Option<String>)> = sqlx::query_as(
+        "SELECT adopted_at, acked_fingerprint FROM kobo_annotations_sync
+         WHERE device_id = ? AND book_uuid = ?",
+    )
+    .bind(device_id)
+    .bind(book_uuid)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.is_some_and(|(adopted, acked)| empty_set_is_safe(adopted.is_some(), acked.as_deref())))
+}
+
+/// The one rule behind both `checkforchanges` and the annotations GET: an empty set
+/// is safe to send once the device adopted, or acked a set that wasn't empty.
+fn empty_set_is_safe(adopted: bool, acked: Option<&str>) -> bool {
+    adopted || acked.is_some_and(|fp| fp != fingerprint(&[]))
 }
 
 /// Record that this device has uploaded its annotation state for this book.
@@ -108,9 +132,9 @@ pub async fn ack_served(
 
 /// Books whose servable annotation set has moved past what this device last
 /// acked: the `checkforchanges` answer. Candidates are the device's sync-state
-/// rows plus the user's books with Kobo-anchored annotations. A pair that is
-/// unadopted and has nothing to serve is never reported: its GET's empty answer
-/// would erase the device's pre-sync backlog.
+/// rows plus the user's books with Kobo-anchored annotations. A pair with nothing to
+/// serve is not reported unless it adopted or acked a non-empty set ([`may_serve_empty`]):
+/// its GET's empty answer would erase the device's pre-sync backlog.
 pub async fn changed_book_uuids(
     pool: &SqlitePool,
     user_id: i64,
@@ -159,9 +183,9 @@ pub async fn changed_book_uuids(
             .map(Vec::as_slice)
             .unwrap_or_default();
         let (adopted, acked) = state.get(&uuid).cloned().unwrap_or((false, None));
-        // Unadopted pairs are servable only once something exists to serve —
-        // the same rule the GET handler applies before answering 200.
-        if !adopted && served.is_empty() {
+        // An unadopted pair that never acked a set is servable only once something exists
+        // to serve — the same rule the GET handler applies before answering 200.
+        if !empty_set_is_safe(adopted, acked.as_deref()) && served.is_empty() {
             continue;
         }
         let current = fingerprint(served);

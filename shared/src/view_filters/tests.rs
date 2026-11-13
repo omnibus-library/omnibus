@@ -63,6 +63,16 @@ fn view_filters_is_empty_false_when_a_clause_is_present() {
     assert!(!filters.is_empty());
 }
 
+#[test]
+fn view_filters_is_empty_true_when_every_clause_has_only_blank_values() {
+    let filters = filters_with(vec![FilterClause::new(
+        FilterField::Tag,
+        FilterMode::Include,
+        &["  "],
+    )]);
+    assert!(filters.is_empty());
+}
+
 const LEGACY_BLOB: &str = r#"{
     "authors": ["Tolkien"],
     "series": [],
@@ -139,6 +149,27 @@ fn view_filters_deserializes_a_legacy_facet_with_bad_values_into_a_valid_filter(
 }
 
 #[test]
+fn view_filters_deserializes_legacy_facets_within_the_total_value_cap() {
+    let facet = |name: &str| -> Vec<String> {
+        (0..MAX_FILTER_VALUES)
+            .map(|i| format!("{name}-{i}"))
+            .collect()
+    };
+    let blob = serde_json::json!({
+        "authors": facet("a"),
+        "series": facet("s"),
+        "formats": facet("f"),
+        "tags": facet("t"),
+        "genres": facet("g"),
+    });
+
+    let filters: ViewFilters = serde_json::from_value(blob).expect("legacy blob parses");
+
+    assert_eq!(total_values(&filters), MAX_FILTER_TOTAL_VALUES);
+    assert_eq!(filters.validate(), Ok(()));
+}
+
+#[test]
 fn view_filters_deserializes_a_legacy_facet_of_only_bad_values_into_no_clause() {
     let filters: ViewFilters =
         serde_json::from_str(r#"{"formats":["  "]}"#).expect("legacy blob parses");
@@ -173,6 +204,10 @@ fn filters_with(clauses: Vec<FilterClause>) -> ViewFilters {
     ViewFilters { clauses }
 }
 
+fn total_values(filters: &ViewFilters) -> usize {
+    filters.clauses.iter().map(|c| c.values.len()).sum()
+}
+
 fn error_of(filters: &ViewFilters) -> String {
     filters.validate().expect_err("filters must be rejected")
 }
@@ -185,14 +220,34 @@ fn view_filters_validate_accepts_the_default() {
 #[test]
 fn view_filters_validate_accepts_a_filter_at_every_cap() {
     let widest = "é".repeat(SHELF_RULE_VALUE_MAX_LEN);
-    let mut clauses = vec![clause_with_values(MAX_FILTER_VALUES); MAX_FILTER_CLAUSES - 1];
-    clauses.push(FilterClause::new(
-        FilterField::Author,
-        FilterMode::Exclude,
-        &[&widest],
-    ));
+    let small = 8;
+    let last = MAX_FILTER_TOTAL_VALUES - MAX_FILTER_VALUES - small * (MAX_FILTER_CLAUSES - 2);
+    let mut clauses = vec![clause_with_values(MAX_FILTER_VALUES)];
+    clauses.extend(vec![clause_with_values(small); MAX_FILTER_CLAUSES - 2]);
+    let mut widest_clause = clause_with_values(last);
+    widest_clause.values[0] = widest;
+    clauses.push(widest_clause);
 
-    assert_eq!(filters_with(clauses).validate(), Ok(()));
+    let filters = filters_with(clauses);
+
+    assert_eq!(filters.clauses.len(), MAX_FILTER_CLAUSES);
+    assert_eq!(total_values(&filters), MAX_FILTER_TOTAL_VALUES);
+    assert_eq!(filters.validate(), Ok(()));
+}
+
+#[test]
+fn view_filters_validate_rejects_more_than_the_total_values() {
+    let mut clauses = vec![clause_with_values(MAX_FILTER_VALUES); 3];
+    clauses.push(clause_with_values(
+        MAX_FILTER_TOTAL_VALUES + 1 - 3 * MAX_FILTER_VALUES,
+    ));
+    let filters = filters_with(clauses);
+
+    assert_eq!(total_values(&filters), MAX_FILTER_TOTAL_VALUES + 1);
+    assert_eq!(
+        error_of(&filters),
+        "a filter may have at most 200 values in all"
+    );
 }
 
 #[test]

@@ -55,6 +55,8 @@ pub enum ProgressState {
         bake_errors: Option<Vec<String>>,
     },
     Failed {
+        /// Why the task failed. For a non-admin it is generic text on any task but their
+        /// own, because the real reason can name a folder on the server.
         message: String,
     },
 }
@@ -118,7 +120,8 @@ pub struct TaskProgress {
     pub kind: TaskKind,
     pub state: ProgressState,
     /// What the task works on, such as a library folder or a book. Tasks with the same
-    /// key run one after another. Absent when the task claims nothing.
+    /// key run one after another. Absent when the task claims nothing, and always absent
+    /// for a non-admin, because the key can be a folder path on the server.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resource_key: Option<String>,
     /// Live detail about the task. Absent for kinds of task that don't report it.

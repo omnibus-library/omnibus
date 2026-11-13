@@ -425,18 +425,30 @@ pub async fn reading_state_for(
     user_id: i64,
     uuids: &[String],
 ) -> Result<std::collections::HashMap<String, KoboBookState>, KoboError> {
+    Ok(reading_state_read(pool, user_id, uuids).await?.0)
+}
+
+/// [`reading_state_for`] plus the server second the states were read in, taken from the same
+/// statement as the rows (SQLite's `now` is fixed within one), so no stamp is later than it.
+/// `record_synced` takes it as `read_at`. It is 0 when no state was read, and the earliest
+/// statement's second when `uuids` spans chunks, which a sync page (100 books) never does.
+pub async fn reading_state_read(
+    pool: &SqlitePool,
+    user_id: i64,
+    uuids: &[String],
+) -> Result<(std::collections::HashMap<String, KoboBookState>, i64), KoboError> {
     let mut out = std::collections::HashMap::with_capacity(uuids.len());
-    if uuids.is_empty() {
-        return Ok(out);
-    }
+    let mut read_at: Option<i64> = None;
     // Each uuid binds twice, so half of `sync_books`'s 900 under SQLite's bind cap.
     for chunk in uuids.chunks(450) {
         for row in fetch_reading_state_chunk(pool, user_id, chunk).await? {
             let (uuid, state) = row_to_kobo_state(&row)?;
+            let chunk_read_at: i64 = row.try_get("read_at")?;
+            read_at = Some(read_at.map_or(chunk_read_at, |r| r.min(chunk_read_at)));
             out.insert(uuid, state);
         }
     }
-    Ok(out)
+    Ok((out, read_at.unwrap_or(0)))
 }
 
 /// The per-chunk union-and-join query text: `book_read_status` and
@@ -470,7 +482,8 @@ fn reading_state_sql(placeholders: &str) -> String {
                 MAX(
                     COALESCE(rs.updated_at, 0),
                     COALESCE(rp.client_updated_at, rp.updated_at, 0)
-                ) AS state_updated_at
+                ) AS state_updated_at,
+                CAST(strftime('%s','now') AS INTEGER) AS read_at
            FROM keys k
            LEFT JOIN book_read_status rs
                   ON rs.book_uuid = k.book_uuid AND rs.user_id = ?

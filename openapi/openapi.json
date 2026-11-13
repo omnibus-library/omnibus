@@ -5762,7 +5762,7 @@
           "Library"
         ],
         "summary": "Count the files in the library folders",
-        "description": "How many ebook and audiobook files the configured library folders hold, by extension.\nIt walks the folders on disk, so it counts files a scan hasn't indexed yet. A folder that\nis missing or unreadable reports `error` in its section instead of failing the request.",
+        "description": "How many ebook and audiobook files the configured library folders hold, by extension.\nIt walks the folders on disk, so it counts files a scan hasn't indexed yet. A folder that\nis missing or unreadable reports `error` in its section instead of failing the request.\nOnly an admin account gets the folder `path`. Anyone else gets `path` null and a generic\n`error`, because both can name a folder on the server.",
         "operationId": "get_library",
         "responses": {
           "200": {
@@ -9744,7 +9744,7 @@
           "Admin"
         ],
         "summary": "Get the background task feed",
-        "description": "The background tasks running now and those that finished in the last 10 seconds or so,\nfor a progress display to poll. A task one user started, such as a Send to Kindle,\nshows only to that user.",
+        "description": "The background tasks running now and those that finished in the last 10 seconds or so,\nfor a progress display to poll. A task one user started, such as a Send to Kindle,\nshows only to that user. For a non-admin account, a task's `resource_key` is left out,\nand the failure text of a task that isn't theirs is replaced by a generic one, because\nboth can name a folder on the server.",
         "operationId": "get_worker_status",
         "responses": {
           "200": {
@@ -13395,7 +13395,8 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "The configured library folder, for an admin. Anyone else gets a short key derived\nfrom it: the same folder always gives the same key, so a client can scope what it\nsaves per library, but it names no folder. Null when no folder is set."
           },
           "total": {
             "type": [
@@ -14717,14 +14718,14 @@
               "string",
               "null"
             ],
-            "description": "Why the folder couldn't be read. Null when it was read."
+            "description": "Why the folder couldn't be read. Null when it was read. A non-admin gets generic\ntext, because the real reason names the folder."
           },
           "path": {
             "type": [
               "string",
               "null"
             ],
-            "description": "The configured folder. Null when none is set."
+            "description": "The configured folder. Null when none is set, or for a non-admin."
           },
           "total_files": {
             "type": "integer",
@@ -15990,7 +15991,8 @@
             ],
             "properties": {
               "message": {
-                "type": "string"
+                "type": "string",
+                "description": "Why the task failed. For a non-admin it is generic text on any task but their\nown, because the real reason can name a folder on the server."
               },
               "state": {
                 "type": "string",
@@ -19060,7 +19062,7 @@
               "string",
               "null"
             ],
-            "description": "What the task works on, such as a library folder or a book. Tasks with the same\nkey run one after another. Absent when the task claims nothing."
+            "description": "What the task works on, such as a library folder or a book. Tasks with the same\nkey run one after another. Absent when the task claims nothing, and always absent\nfor a non-admin, because the key can be a folder path on the server."
           },
           "started_at_ms": {
             "type": "integer",
@@ -19502,7 +19504,7 @@
       },
       "ViewFilters": {
         "type": "object",
-        "description": "A library filter. A book passes when it matches every clause. Up to 16 clauses.\nFormat values are lowercase, such as `epub` or `m4b`. On input it also takes the older\n`authors`, `series`, `formats`, `tags` and `genres` lists, each read as an include\nclause. Output carries `clauses` only.",
+        "description": "A library filter. A book passes when it matches every clause. Up to 16 clauses and 200\nvalues in all.\nFormat values are lowercase, such as `epub` or `m4b`. On input it also takes the older\n`authors`, `series`, `formats`, `tags` and `genres` lists, each read as an include\nclause. Output carries `clauses` only.",
         "required": [
           "clauses"
         ],

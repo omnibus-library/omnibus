@@ -10,6 +10,9 @@ use omnibus_shared::{ProgressState, TaskDetail, WorkerStatus};
 
 use super::types::{lock_unpoison, wall_clock_ms, TaskId, Worker, TERMINAL_RETENTION};
 
+/// What a non-admin reads in place of another task's failure text, which can name a path.
+const REDACTED_FAILURE: &str = "the task failed";
+
 impl Worker {
     /// Snapshot of every live worker task: non-terminal entries in `active`,
     /// terminal ones (`Done` / `Failed`) younger than [`TERMINAL_RETENTION`] in
@@ -26,7 +29,14 @@ impl Worker {
     /// it, any user could read another's Send-to-Kindle failure text from the
     /// general poll, bypassing [`Worker::owned_task_state`]'s owner check.
     pub fn owner_scoped_snapshot(&self, user_id: i64) -> WorkerStatus {
-        self.snapshot(TERMINAL_RETENTION, Some(user_id))
+        self.snapshot(TERMINAL_RETENTION, Some(user_id), false)
+    }
+
+    /// [`Worker::owner_scoped_snapshot`] for a non-admin: also clears every `resource_key`
+    /// (a library folder path) and swaps the failure text of tasks `user_id` doesn't own
+    /// for [`REDACTED_FAILURE`].
+    pub fn reader_snapshot(&self, user_id: i64) -> WorkerStatus {
+        self.snapshot(TERMINAL_RETENTION, Some(user_id), true)
     }
 
     /// Test-friendly variant of [`Worker::progress_snapshot`] that lets
@@ -35,15 +45,15 @@ impl Worker {
     /// shorter window so the eviction assertion doesn't have to sleep
     /// for the full 10 s of wall-clock time.
     pub(super) fn progress_snapshot_with_retention(&self, retention: Duration) -> WorkerStatus {
-        self.snapshot(retention, None)
+        self.snapshot(retention, None, false)
     }
 
     /// Shared snapshot body for [`Worker::progress_snapshot`],
-    /// [`Worker::owner_scoped_snapshot`], and
+    /// [`Worker::owner_scoped_snapshot`], [`Worker::reader_snapshot`], and
     /// [`Worker::progress_snapshot_with_retention`]. `viewer` narrows the
     /// result to unowned entries plus that user's own when set; `None`
-    /// returns everything.
-    fn snapshot(&self, retention: Duration, viewer: Option<i64>) -> WorkerStatus {
+    /// returns everything. `redact` hides paths from the copies it returns.
+    fn snapshot(&self, retention: Duration, viewer: Option<i64>, redact: bool) -> WorkerStatus {
         let now = Instant::now();
         let mut map = lock_unpoison(&self.progress);
 
@@ -68,10 +78,18 @@ impl Worker {
                     continue;
                 }
             }
+            let mut progress = entry.progress.clone();
+            if redact {
+                progress.resource_key = None;
+                let theirs = entry.owner == viewer;
+                if let (false, ProgressState::Failed { message }) = (theirs, &mut progress.state) {
+                    *message = REDACTED_FAILURE.to_string();
+                }
+            }
             if entry.terminal_at.is_some() {
-                recent_complete.push(entry.progress.clone());
+                recent_complete.push(progress);
             } else {
-                active.push(entry.progress.clone());
+                active.push(progress);
             }
         }
         // BTreeMap iteration is already key-ordered, so both vecs come out

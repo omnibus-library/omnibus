@@ -18,6 +18,9 @@ use crate::view_prefs::{SortDir, SortKey};
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct EbookLibrary {
+    /// The configured library folder, for an admin. Anyone else gets a short key derived
+    /// from it: the same folder always gives the same key, so a client can scope what it
+    /// saves per library, but it names no folder. Null when no folder is set.
     pub path: Option<String>,
     pub books: Vec<EbookMetadata>,
     pub error: Option<String>,

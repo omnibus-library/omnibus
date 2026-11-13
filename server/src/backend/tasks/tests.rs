@@ -32,27 +32,48 @@ mod get_worker_status {
 
     #[tokio::test]
     async fn returns_the_feed_to_a_reader() {
+        let (_, status) = scan_feed_for(false).await;
+
+        assert_eq!(status.recent_complete.len(), 1);
+        assert_eq!(status.recent_complete[0].kind, TaskKind::Scan);
+    }
+
+    async fn scan_feed_for(admin: bool) -> (String, WorkerStatus) {
         let (app, state, pool) = fixture().await;
-        let token = reader_token(&pool).await;
+        let token = if admin {
+            admin_token(&pool).await
+        } else {
+            reader_token(&pool).await
+        };
         let scan = state.worker().post(Task::Scan {
             library_path: "/no/such/library".to_string(),
         });
         state.worker().await_completion(scan).await;
-
         let res = app
             .oneshot(get_with_bearer("/api/worker/status", &token))
             .await
             .expect("request should succeed");
+        let body = body_text(res).await;
+        let status = serde_json::from_str(&body).expect("the feed should be JSON");
+        (body, status)
+    }
 
-        assert_eq!(res.status(), StatusCode::OK);
-        let status: WorkerStatus = body_json(res).await;
-        let finished: Vec<_> = status
+    #[tokio::test]
+    async fn hides_the_library_path_from_a_reader() {
+        let (body, status) = scan_feed_for(false).await;
+
+        assert!(!status.recent_complete.is_empty());
+        assert!(!body.contains("/no/such/library"), "{body}");
+    }
+
+    #[tokio::test]
+    async fn shows_the_library_path_to_an_admin() {
+        let (_, status) = scan_feed_for(true).await;
+
+        assert!(status
             .recent_complete
             .iter()
-            .filter(|t| t.task_id == scan)
-            .collect();
-        assert_eq!(finished.len(), 1);
-        assert_eq!(finished[0].kind, TaskKind::Scan);
+            .any(|t| t.resource_key.as_deref() == Some("/no/such/library")));
     }
 
     #[tokio::test]

@@ -58,13 +58,15 @@ function Backdrop({ book }: { book: Detail }) {
 }
 
 function Page({ book }: { book: Detail }) {
-  const { tab, entering, selectTab } = useBookTabs();
+  const { tab, entering, selectTab, stillOn } = useBookTabs();
   // One queue for every write to your review, whichever control makes it.
   const rating = useMyRating(book.uuid);
   const [dialog, setDialog] = useState<BookDialog | null>(null);
   // Takes the reader to their rating on the Reviews tab, or its composer when the stars can't take focus.
+  // Each of these waits for the turn to be drawn, and does nothing if the reader has picked another tab meanwhile.
   const leaveReview = async () => {
-    await selectTab("reviews");
+    await selectTab("reviews", true);
+    if (!stillOn("reviews")) return;
     const panel = document.getElementById(panelId("reviews"));
     const target =
       panel?.querySelector<HTMLElement>(
@@ -77,16 +79,20 @@ function Page({ book }: { book: Detail }) {
     });
   };
   // Focus lands on the tab, so the next Tab goes into the reviews rather than back to the hero.
+  // The scroll waits for the turn: one that ran under it would paint the snapshots over the top bar.
   const openReviews = async () => {
-    await selectTab("reviews");
-    document.getElementById(tabId("reviews"))?.focus({ preventScroll: true });
-    document.getElementById(panelId("reviews"))?.scrollIntoView({
+    await selectTab("reviews", true);
+    if (!stillOn("reviews")) return;
+    const tab = document.getElementById(tabId("reviews"));
+    tab?.focus({ preventScroll: true });
+    tab?.closest(".bp-tabs")?.scrollIntoView({
       behavior: prefersReducedMotion() ? "auto" : "smooth",
       block: "start",
     });
   };
   const showSeries = async () => {
-    await selectTab("overview");
+    await selectTab("overview", true);
+    if (!stillOn("overview")) return;
     document.getElementById(SERIES_ID)?.scrollIntoView({
       behavior: prefersReducedMotion() ? "auto" : "smooth",
       block: "start",

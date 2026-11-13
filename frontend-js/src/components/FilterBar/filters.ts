@@ -3,10 +3,13 @@ import { PHONE_QUERY } from "../../useMediaQuery";
 
 export const MAX_FILTER_CLAUSES = 16;
 export const MAX_FILTER_VALUES = 64;
+/** The most values a filter holds across all its clauses: the server's `MAX_FILTER_TOTAL_VALUES`. */
+export const MAX_FILTER_TOTAL_VALUES = 200;
 export const MAX_SHOWN_OPTIONS = 200;
 /** How many rows the tag and genre clouds stop at. */
 export const CLOUD_LIMIT = 500;
-const MAX_VALUE_LENGTH = 512;
+/** The longest value a filter may hold, in characters. */
+export const MAX_VALUE_LENGTH = 512;
 
 /** Room a full menu needs under its facet: mode, search, list, footer and gaps. */
 const MENU_ROOM = 460;
@@ -81,12 +84,27 @@ const asciiLower = (s: string) => s.replace(/[A-Z]/g, (c) => c.toLowerCase());
 export const sameName = (a: string, b: string) =>
   asciiLower(a) === asciiLower(b);
 
-/** `value` ticked or unticked in `picked`, ignoring ASCII case; a new pick past the cap is refused. */
-export function togglePick(picked: string[], value: string): string[] {
+/** How many values `field`'s clause may hold: its own cap, less what the filter's other clauses already use of the total. */
+export function pickLimit(clauses: FilterClause[], field: FilterField): number {
+  const others = clauses
+    .filter((c) => c.field !== field)
+    .reduce((sum, c) => sum + c.values.length, 0);
+  return Math.max(
+    0,
+    Math.min(MAX_FILTER_VALUES, MAX_FILTER_TOTAL_VALUES - others),
+  );
+}
+
+/** `value` ticked or unticked in `picked`, ignoring ASCII case; a new pick past `limit` is refused. */
+export function togglePick(
+  picked: string[],
+  value: string,
+  limit: number,
+): string[] {
   if (picked.some((p) => sameName(p, value))) {
     return picked.filter((p) => !sameName(p, value));
   }
-  return picked.length < MAX_FILTER_VALUES ? [...picked, value] : picked;
+  return picked.length < limit ? [...picked, value] : picked;
 }
 
 export const isPicked = (picked: string[], value: string) =>

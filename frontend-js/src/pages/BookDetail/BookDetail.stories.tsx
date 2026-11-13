@@ -301,13 +301,118 @@ export const HouseholdRatingOpensTheReviewsTab: Story = {
         "true",
       ),
     );
-    await expect(canvas.getByRole("tab", { name: "Reviews" })).toHaveFocus();
+    // Focus follows the turn, which has to be drawn first.
+    await waitFor(() =>
+      expect(canvas.getByRole("tab", { name: "Reviews" })).toHaveFocus(),
+    );
     const panel = canvas.getByRole("tabpanel", { name: "Reviews" });
     await waitFor(() => {
       const box = panel.getBoundingClientRect();
       expect(box.top).toBeGreaterThanOrEqual(0);
       expect(box.top).toBeLessThan(window.innerHeight);
     });
+  },
+};
+
+/** The pseudo-element each running animation targets, such as `::view-transition-new(bp-tab-page)`. */
+function transitionPseudos(): string[] {
+  return document
+    .getAnimations()
+    .map((animation) => (animation.effect as KeyframeEffect).pseudoElement)
+    .filter((pseudo): pseudo is string => pseudo !== null);
+}
+
+/** Resolves once the window has stopped scrolling. */
+async function scrollSettled(): Promise<void> {
+  let last = Number.NaN;
+  while (last !== window.scrollY) {
+    last = window.scrollY;
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  }
+}
+
+export const ManyReviewsLinkTurnsWithoutMorphingThePanel: Story = {
+  // The app's frame, so the sticky top bar is there for the turn and the scroll to meet.
+  render: () => (
+    <div className="app-shell">
+      <TopNav />
+      <main>
+        <Routes>
+          <Route path="/books/:uuid" element={<BookDetail />} />
+        </Routes>
+      </main>
+    </div>
+  ),
+  beforeEach({ msw }) {
+    msw.use(
+      ...reviewHandlers({
+        mine: aWireReview({ stars: 4 }),
+        others: Array.from({ length: 22 }, (_, i) =>
+          aWireOtherReview({ user_id: 100 + i, username: `reader-${i}` }),
+        ),
+      }),
+      ...bookDetailHandlers(BOOK),
+    );
+  },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    const link = await canvas.findByRole("button", { name: "23 reviews" });
+    const bar = canvasElement.querySelector(".atrium-topbar");
+    if (!bar) throw new Error("the top bar is not drawn");
+    const scrolledFrom = window.scrollY;
+    await userEvent.click(link);
+
+    // The old and new pages still turn, but the group is never animated: a morph from the
+    // Overview's height to the tall Reviews panel is the stretch this guards against. The
+    // scroll waits for the turn, so no snapshot paints over the top bar while it moves.
+    await waitFor(() => {
+      const pseudos = transitionPseudos();
+      expect(pseudos).toContain("::view-transition-new(bp-tab-page)");
+      expect(pseudos).not.toContain("::view-transition-group(bp-tab-page)");
+      expect(window.scrollY).toBe(scrolledFrom);
+    });
+    const tab = canvas.getByRole("tab", { name: "Reviews" });
+    await waitFor(() => expect(tab).toHaveAttribute("aria-selected", "true"));
+    // Focus follows the turn, which has to be drawn first.
+    await waitFor(() => expect(tab).toHaveFocus());
+    // The focused tab ends in view once the scroll has come to rest, just below the top bar
+    // rather than under it.
+    await waitFor(() => expect(window.scrollY).toBeGreaterThan(scrolledFrom));
+    await scrollSettled();
+    const box = tab.getBoundingClientRect();
+    await expect(box.top).toBeGreaterThanOrEqual(
+      bar.getBoundingClientRect().bottom,
+    );
+    await expect(box.bottom).toBeLessThan(window.innerHeight);
+  },
+};
+
+export const AnotherTabPickedDuringTheTurnKeepsFocus: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...reviewHandlers({
+        mine: aWireReview({ stars: 4 }),
+        others: Array.from({ length: 22 }, (_, i) =>
+          aWireOtherReview({ user_id: 100 + i, username: `reader-${i}` }),
+        ),
+      }),
+      ...bookDetailHandlers(BOOK),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "23 reviews" }),
+    );
+    // The reader changes their mind while the first turn is still being drawn.
+    await userEvent.click(canvas.getByRole("tab", { name: "Files & Details" }));
+    const files = canvas.getByRole("tab", { name: "Files & Details" });
+    await waitFor(() => expect(files).toHaveAttribute("aria-selected", "true"));
+    await scrollSettled();
+
+    // Neither the first turn's focus nor its scroll follows them to the Reviews tab.
+    await expect(files).toHaveFocus();
+    await expect(
+      canvas.getByRole("tab", { name: "Reviews" }),
+    ).not.toHaveFocus();
   },
 };
 

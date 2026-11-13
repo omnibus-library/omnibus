@@ -215,6 +215,105 @@ async fn changed_book_uuids_reports_a_book_after_a_web_side_delete() {
 }
 
 #[tokio::test]
+async fn changed_book_uuids_reports_an_unadopted_pair_once_its_delivered_set_is_emptied() {
+    let (pool, user, device, uuid) = fixture().await;
+    ingest_kobo_annotations(
+        &pool,
+        user,
+        &uuid,
+        &[upload("kobo-a", HighlightColor::Amber, None)],
+        &[],
+    )
+    .await
+    .unwrap();
+    mark_downloaded(&pool, device, &uuid).await.unwrap();
+    let served = served_kobo_annotations(&pool, user, &uuid).await.unwrap();
+    ack_served(&pool, device, &uuid, &fingerprint(&served))
+        .await
+        .unwrap();
+    assert!(changed_book_uuids(&pool, user, device)
+        .await
+        .unwrap()
+        .is_empty());
+
+    let id = crate::annotations::highlight_id_for_client_id(&pool, user, "kobo-a")
+        .await
+        .unwrap()
+        .unwrap();
+    crate::annotations::delete_highlight(&pool, user, id)
+        .await
+        .unwrap();
+    assert_eq!(
+        changed_book_uuids(&pool, user, device).await.unwrap(),
+        vec![uuid.clone()]
+    );
+
+    // Once the device holds the empty set, the loop converges.
+    ack_served(&pool, device, &uuid, &fingerprint(&[]))
+        .await
+        .unwrap();
+    assert!(changed_book_uuids(&pool, user, device)
+        .await
+        .unwrap()
+        .is_empty());
+}
+
+#[tokio::test]
+async fn may_serve_empty_is_true_after_adoption() {
+    let (pool, _user, device, uuid) = fixture().await;
+
+    mark_adopted(&pool, device, &uuid).await.unwrap();
+
+    assert!(may_serve_empty(&pool, device, &uuid).await.unwrap());
+}
+
+#[tokio::test]
+async fn may_serve_empty_is_true_after_acking_a_non_empty_set() {
+    let (pool, user, device, uuid) = fixture().await;
+    ingest_kobo_annotations(
+        &pool,
+        user,
+        &uuid,
+        &[upload("kobo-a", HighlightColor::Amber, None)],
+        &[],
+    )
+    .await
+    .unwrap();
+    mark_downloaded(&pool, device, &uuid).await.unwrap();
+    let served = served_kobo_annotations(&pool, user, &uuid).await.unwrap();
+    ack_served(&pool, device, &uuid, &fingerprint(&served))
+        .await
+        .unwrap();
+
+    assert!(may_serve_empty(&pool, device, &uuid).await.unwrap());
+}
+
+#[tokio::test]
+async fn may_serve_empty_is_false_with_no_row_or_only_a_download() {
+    let (pool, _user, device, uuid) = fixture().await;
+    assert!(!may_serve_empty(&pool, device, &uuid).await.unwrap());
+
+    mark_downloaded(&pool, device, &uuid).await.unwrap();
+    assert!(!may_serve_empty(&pool, device, &uuid).await.unwrap());
+
+    ack_served(&pool, device, &uuid, &fingerprint(&[]))
+        .await
+        .unwrap();
+    assert!(!may_serve_empty(&pool, device, &uuid).await.unwrap());
+}
+
+#[tokio::test]
+async fn may_serve_empty_propagates_db_error_when_pool_is_closed() {
+    let (pool, _user, device, uuid) = fixture().await;
+    pool.close().await;
+
+    assert!(matches!(
+        may_serve_empty(&pool, device, &uuid).await,
+        Err(KoboAnnotationSyncError::Sqlx(_))
+    ));
+}
+
+#[tokio::test]
 async fn changed_book_uuids_computes_the_correct_set_across_multiple_candidate_books() {
     // Exercises the batched fetch (`served_kobo_annotations_batch`) with more
     // than one candidate in flight: an acked-and-quiet book, a never-acked

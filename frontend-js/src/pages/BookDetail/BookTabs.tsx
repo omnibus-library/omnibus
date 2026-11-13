@@ -28,21 +28,27 @@ export function useBookTabs() {
   const [entering, setEntering] = useState<TabId | null>(null);
   // The tab last asked for, which leads `tab` through a page turn: two asks inside one turn compare with each other.
   const target = useRef<TabId>("overview");
-  /** Resolves once the new panel is in the DOM, so a caller can focus or scroll within it. */
-  const selectTab = useCallback((next: TabId): Promise<void> => {
-    if (next === target.current) return Promise.resolve();
-    document.documentElement.style.setProperty(
-      "--dir",
-      indexOf(next) > indexOf(target.current) ? "1" : "-1",
-    );
-    target.current = next;
-    const css = turnMode() === "css";
-    return turnPage(() => {
-      setTab(next);
-      setEntering(css ? next : null);
-    });
-  }, []);
-  return { tab, entering, selectTab };
+  /** Resolves once the new panel is in the DOM, so a caller can focus within it; `settled` waits for the turn to be drawn too, so a scroll doesn't run under it. */
+  const selectTab = useCallback(
+    (next: TabId, settled = false): Promise<void> => {
+      if (next === target.current) return Promise.resolve();
+      document.documentElement.style.setProperty(
+        "--dir",
+        indexOf(next) > indexOf(target.current) ? "1" : "-1",
+      );
+      target.current = next;
+      const css = turnMode() === "css";
+      const turn = turnPage(() => {
+        setTab(next);
+        setEntering(css ? next : null);
+      });
+      return settled ? turn.finished : turn.updated;
+    },
+    [],
+  );
+  /** Whether `id` is still the tab last asked for, so a caller that waited on a turn can tell the reader moved on. */
+  const stillOn = useCallback((id: TabId) => target.current === id, []);
+  return { tab, entering, selectTab, stillOn };
 }
 
 /** The id of a tab, for a caller that moves focus onto it. */

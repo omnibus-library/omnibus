@@ -12,6 +12,7 @@ const stubReducedMotion = (reduce: boolean) =>
 type StartViewTransition = (update: () => void) => {
   ready: Promise<void>;
   updateCallbackDone: Promise<void>;
+  finished: Promise<void>;
 };
 
 const stubViewTransitions = (start: StartViewTransition) =>
@@ -34,6 +35,7 @@ describe("turnMode", () => {
     stubViewTransitions(() => ({
       ready: Promise.resolve(),
       updateCallbackDone: Promise.resolve(),
+      finished: Promise.resolve(),
     }));
 
     expect(turnMode()).toBe("view-transition");
@@ -44,6 +46,7 @@ describe("turnMode", () => {
     stubViewTransitions(() => ({
       ready: Promise.resolve(),
       updateCallbackDone: Promise.resolve(),
+      finished: Promise.resolve(),
     }));
 
     expect(turnMode()).toBe("instant");
@@ -57,7 +60,7 @@ describe("turnPage", () => {
     stubViewTransitions(start);
     const update = vi.fn();
 
-    const done = turnPage(update);
+    const done = turnPage(update).updated;
 
     expect(update).toHaveBeenCalledOnce();
     expect(start).not.toHaveBeenCalled();
@@ -68,7 +71,7 @@ describe("turnPage", () => {
     stubReducedMotion(false);
     const update = vi.fn();
 
-    const done = turnPage(update);
+    const done = turnPage(update).updated;
 
     expect(update).toHaveBeenCalledOnce();
     await done;
@@ -83,10 +86,11 @@ describe("turnPage", () => {
       return {
         ready: Promise.resolve(),
         updateCallbackDone: Promise.resolve(),
+        finished: Promise.resolve(),
       };
     });
 
-    await turnPage(() => order.push("update"));
+    await turnPage(() => order.push("update")).updated;
 
     expect(order).toEqual(["start", "update"]);
   });
@@ -97,10 +101,11 @@ describe("turnPage", () => {
     stubViewTransitions(() => ({
       ready: Promise.resolve(),
       updateCallbackDone: callbackDone.promise,
+      finished: Promise.resolve(),
     }));
     let resolved = false;
 
-    const done = turnPage(() => {}).then(() => {
+    const done = turnPage(() => {}).updated.then(() => {
       resolved = true;
     });
     await Promise.resolve();
@@ -109,5 +114,53 @@ describe("turnPage", () => {
     callbackDone.release();
     await done;
     expect(resolved).toBe(true);
+  });
+});
+
+describe("turnPage finished", () => {
+  it("settles finished only once the turn is drawn, after updated", async () => {
+    stubReducedMotion(false);
+    const drawn = deferred();
+    stubViewTransitions((update) => {
+      update();
+      return {
+        ready: Promise.resolve(),
+        updateCallbackDone: Promise.resolve(),
+        finished: drawn.promise,
+      };
+    });
+    let finished = false;
+
+    const turn = turnPage(() => {});
+    turn.finished.then(() => {
+      finished = true;
+    });
+    await turn.updated;
+    await Promise.resolve();
+    expect(finished).toBe(false);
+
+    drawn.release();
+    await turn.finished;
+    expect(finished).toBe(true);
+  });
+
+  it("settles finished for a turn the next one skipped", async () => {
+    stubReducedMotion(false);
+    stubViewTransitions(() => ({
+      ready: Promise.reject(new Error("skipped")),
+      updateCallbackDone: Promise.resolve(),
+      finished: Promise.reject(new Error("skipped")),
+    }));
+
+    await expect(turnPage(() => {}).finished).resolves.toBeUndefined();
+  });
+
+  it("is finished at once without view transitions", async () => {
+    stubReducedMotion(true);
+    const update = vi.fn();
+
+    await turnPage(update).finished;
+
+    expect(update).toHaveBeenCalledOnce();
   });
 });

@@ -1057,6 +1057,11 @@ button.bp-byline-series {
 
 /* ---------- Tabs, with the ribbon bookmark as the indicator ---------- */
 /* Above what the panels position, so nothing covers the ribbon; under the sticky top bar's 5. */
+/* A scroll to the strip or the series stops below the sticky top bar, not under it. */
+.bp-tabs,
+#bp-series {
+  scroll-margin-top: calc(var(--topbar-h) + 8px);
+}
 .bp-tabs {
   position: relative;
   z-index: 3;
@@ -1166,9 +1171,9 @@ button.bp-byline-series {
   animation: none;
   mix-blend-mode: normal;
 }
+/* Unanimated, the group follows the live panel, so it never morphs from the Overview's height to a tall panel. */
 ::view-transition-group(bp-tab-page) {
-  animation-duration: 440ms;
-  animation-timing-function: var(--ease-out);
+  animation: none;
 }
 ::view-transition-old(bp-tab-page) {
   animation: bp-page-out 240ms var(--ease-in) both;

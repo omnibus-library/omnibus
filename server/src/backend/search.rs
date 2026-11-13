@@ -20,7 +20,7 @@ use omnibus_shared::{
     PaletteResults, SearchQuery,
 };
 
-use super::{internal, with_pagination_headers, AppState};
+use super::{internal, library_path_for, with_pagination_headers, AppState};
 use crate::auth::AuthUser;
 
 /// The uuids a content search scopes to, from either spelling.
@@ -69,7 +69,7 @@ fn reject_if_over_length(q: &str) -> Option<Response> {
     ),
 )]
 pub(super) async fn get_search(
-    _user: AuthUser,
+    user: AuthUser,
     State(state): State<AppState>,
     Query(params): Query<SearchQuery>,
 ) -> Response {
@@ -100,7 +100,7 @@ pub(super) async fn get_search(
     // The full hit count rides the `X-Total-Count` / `X-Total-Cap` headers so
     // clients can detect truncation without changing the JSON body shape.
     let body = Json(EbookLibrary {
-        path: Some(path),
+        path: library_path_for(Some(path), &user),
         books,
         error: None,
         total: None,

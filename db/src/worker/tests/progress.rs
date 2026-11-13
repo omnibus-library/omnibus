@@ -451,3 +451,45 @@ async fn owner_scoped_snapshot_hides_another_users_owned_task_but_keeps_unowned_
         .iter()
         .any(|p| p.task_id == shared_id));
 }
+
+/// `reader_snapshot` is the non-admin feed: a path-valued `resource_key` never leaves, and a
+/// failure's text stays only on the viewer's own task.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn reader_snapshot_clears_resource_keys_and_foreign_failure_text() {
+    let w = make_worker_default(pool().await);
+    let post = |tag| {
+        w.post(Task::Test {
+            tag,
+            latency_ms: 5,
+            resource: Some("/srv/library".to_string()),
+            route_through_scan_sem: false,
+            on_run: None,
+            on_done: None,
+        })
+    };
+    let mine = post("mine");
+    w.set_task_owner(mine, 1);
+    let shared = post("shared");
+    for id in [mine, shared] {
+        let _ = w.await_completion(id).await;
+        let message = "scan of /srv/library failed".to_string();
+        w.write_terminal_progress(id, ProgressState::Failed { message });
+    }
+
+    let view = w.reader_snapshot(1);
+
+    let failure = |id| {
+        let task = view
+            .recent_complete
+            .iter()
+            .find(|p| p.task_id == id)
+            .unwrap();
+        assert_eq!(task.resource_key, None);
+        match &task.state {
+            ProgressState::Failed { message } => message.clone(),
+            other => panic!("expected a failure, got {other:?}"),
+        }
+    };
+    assert_eq!(failure(mine), "scan of /srv/library failed");
+    assert!(!failure(shared).contains("/srv/library"));
+}

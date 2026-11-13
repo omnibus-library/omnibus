@@ -967,3 +967,22 @@ async fn sole_uuid(pool: &sqlx::SqlitePool) -> String {
         .await
         .unwrap()
 }
+
+const FOLDER: &str = "/does/not/exist/omnibus_search_test";
+
+#[tokio::test]
+async fn api_search_hides_the_folder_path_from_a_reader_behind_a_stable_key() {
+    let (body, first) = library_listing_for("/api/search?q=hello", false, FOLDER).await;
+    let (_, second) = library_listing_for("/api/search?q=hello", false, FOLDER).await;
+
+    assert!(!body.contains("/does/not/exist"), "{body}");
+    assert!(first.path.is_some());
+    assert_eq!(first.path, second.path, "the key must be stable");
+}
+
+#[tokio::test]
+async fn api_search_shows_the_folder_path_to_an_admin() {
+    let (_, library) = library_listing_for("/api/search?q=hello", true, FOLDER).await;
+
+    assert_eq!(library.path.as_deref(), Some(FOLDER));
+}
