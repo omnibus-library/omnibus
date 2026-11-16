@@ -91,7 +91,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@v22
+        uses: DeterminateSystems/nix-installer-action@v23
 
       # Distinct cache from rust.yml/e2e.yml (`nix-rust-`/`nix-e2e-`) so the
       # workflows don't clobber each other; shared across runs via the prefix.

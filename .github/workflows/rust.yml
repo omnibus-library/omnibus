@@ -149,7 +149,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@v22
+        uses: DeterminateSystems/nix-installer-action@v23
 
       - name: Cache Nix store
         uses: nix-community/cache-nix-action@v7
@@ -237,7 +237,7 @@ jobs:
         run: scripts/fetch-fixtures.sh
 
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@v22
+        uses: DeterminateSystems/nix-installer-action@v23
 
       - name: Cache Nix store
         uses: nix-community/cache-nix-action@v7
@@ -315,7 +315,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@v22
+        uses: DeterminateSystems/nix-installer-action@v23
 
       # Cache the Nix store across runs. Auto-purges caches with the same
       # prefix that haven't been touched in 7 days so we stay under the 10 GB

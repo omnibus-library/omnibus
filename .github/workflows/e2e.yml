@@ -100,7 +100,7 @@ jobs:
 
       - name: Install Nix
         if: steps.server-cache.outputs.cache-hit != 'true'
-        uses: DeterminateSystems/nix-installer-action@v22
+        uses: DeterminateSystems/nix-installer-action@v23
 
       - name: Cache Nix store
         if: steps.server-cache.outputs.cache-hit != 'true'
@@ -177,7 +177,7 @@ jobs:
         run: scripts/fetch-fixtures.sh
 
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@v22
+        uses: DeterminateSystems/nix-installer-action@v23
 
       # Distinct nix cache from `rust.yml`'s `nix-rust-` so the two workflows
       # don't clobber each other; shared across e2e jobs via the prefix.
