@@ -274,7 +274,7 @@ jobs:
       # CODECOV_TOKEN repo secret to make it reliable.
       - name: Upload coverage to Codecov
         if: always() && hashFiles('lcov.info') != ''
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7
         with:
           files: ./lcov.info
           flags: unit
@@ -286,7 +286,7 @@ jobs:
       # of the analytics); this never affects the gated job status.
       - name: Upload test results to Codecov
         if: ${{ !cancelled() && hashFiles('target/nextest/ci/junit.xml') != '' }}
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7
         with:
           files: ./target/nextest/ci/junit.xml
           report_type: test_results
