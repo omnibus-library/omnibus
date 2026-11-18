@@ -144,6 +144,7 @@ fn edition() -> ProviderEdition {
         first_publish_year: Some(1813),
         genres: vec!["Fiction".into(), "Classics".into()],
         relevance: None,
+        popularity: None,
     }
 }
 
@@ -309,6 +310,7 @@ fn candidate() -> ProviderEdition {
         first_publish_year: Some(1813),
         genres: vec!["Fiction".into()],
         relevance: None,
+        popularity: None,
     }
 }
 

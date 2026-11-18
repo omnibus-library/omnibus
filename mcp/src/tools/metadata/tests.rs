@@ -111,6 +111,7 @@ fn stub_edition(title: String) -> ProviderEdition {
         first_publish_year: Some(1818),
         genres: vec![],
         relevance: Some(1000),
+        popularity: None,
     }
 }
 

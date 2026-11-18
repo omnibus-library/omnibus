@@ -566,3 +566,16 @@ async fn hardcover_by_ref_refuses_a_handle_wider_than_a_graphql_int() {
         .unwrap();
     assert!(found.is_none());
 }
+
+#[tokio::test]
+async fn hardcover_search_maps_users_count_to_popularity() {
+    let server = MockServer::start().await;
+    let mut document = hc_search_document();
+    document["users_count"] = json!(1234);
+    mount_hc_search(&server, json!([{ "document": document }])).await;
+
+    let results = hardcover::by_text(&hardcover_config_for(&server), QUERY)
+        .await
+        .unwrap();
+    assert_eq!(results[0].popularity, Some(1234));
+}

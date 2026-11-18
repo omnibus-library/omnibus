@@ -377,6 +377,17 @@ fn ol_search_hit() -> serde_json::Value {
     })
 }
 
+#[test]
+fn open_library_search_asks_for_the_readinglog_count() {
+    let url = openlibrary::search_url(&offline_config(None), &title_query(QUERY)).unwrap();
+    let fields = reqwest::Url::parse(&url)
+        .unwrap()
+        .query_pairs()
+        .find_map(|(k, v)| (k == "fields").then(|| v.into_owned()))
+        .unwrap();
+    assert!(fields.split(',').any(|f| f == "readinglog_count"), "{fields}");
+}
+
 fn gb_search_hit() -> serde_json::Value {
     json!({
         "totalItems": 2,
@@ -573,6 +584,7 @@ async fn resolving_open_library_editions_makes_no_request_and_files_no_work_isbn
         first_publish_year: None,
         genres: Vec::new(),
         relevance: None,
+        popularity: None,
     };
 
     let resolved = resolve_open_library_editions(&config, vec![work]).await;

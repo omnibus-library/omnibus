@@ -25,6 +25,7 @@ fn candidate(title: &str, authors: &[&str]) -> ProviderEdition {
         first_publish_year: None,
         genres: Vec::new(),
         relevance: None,
+        popularity: None,
     }
 }
 
