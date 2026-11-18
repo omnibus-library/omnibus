@@ -55,6 +55,11 @@ ignore = [
     # job) covers those. Revisit when lofty drops paste.
     { id = "RUSTSEC-2024-0436", reason = "paste unmaintained — proc-macro via lofty (db audiobook tags); awaiting upstream migration" },
 
+    # ---- Unmaintained notice for `chrono`, reached only through `rmcp` and
+    # `schemars` (the mcp crate); no crate here depends on it directly. Not a
+    # vulnerability. Revisit when rmcp or schemars move off it.
+    { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained — transitive via rmcp / schemars (mcp crate); no direct dependency; awaiting upstream migration" },
+
     # ---- Unmaintained notice behind the PDF text extractor (#2568).
     # `ttf-parser` is `lopdf`'s embedded-font parser, reached only through
     # `pdf-extract` in `db::pdf`. Not a vulnerability; and `lopdf 0.42` is the
