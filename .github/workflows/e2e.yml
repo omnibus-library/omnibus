@@ -285,7 +285,7 @@ jobs:
       # failures still upload; best-effort, never gates the suite.
       - name: Upload test results to Codecov
         if: ${{ !cancelled() && hashFiles('ui_tests/playwright/results-*.xml') != '' }}
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7
         with:
           files: ui_tests/playwright/results-${{ matrix.shard }}.xml
           report_type: test_results

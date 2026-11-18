@@ -113,7 +113,7 @@ jobs:
 
       - name: Upload test results to Codecov
         if: ${{ !cancelled() && hashFiles('frontend-js/results-*.xml') != '' }}
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7
         with:
           files: frontend-js/results-unit.xml,frontend-js/results-stories.xml
           report_type: test_results
@@ -124,7 +124,7 @@ jobs:
       # Codecov merges the two uploads under one flag.
       - name: Upload coverage to Codecov
         if: ${{ !cancelled() && hashFiles('frontend-js/coverage/*/lcov.info') != '' }}
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7
         with:
           files: frontend-js/coverage/unit/lcov.info,frontend-js/coverage/stories/lcov.info
           flags: frontend-js
