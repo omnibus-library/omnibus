@@ -254,6 +254,9 @@ pub struct ProviderEdition {
     /// across providers.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub relevance: Option<i32>,
+    /// How widely read the work is, in the answering provider's own unit; ranking-only.
+    #[serde(skip)]
+    pub popularity: Option<u32>,
 }
 
 impl ProviderEdition {

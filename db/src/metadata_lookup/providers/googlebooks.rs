@@ -66,6 +66,10 @@ struct GbVolumeInfo {
     /// thing it publishes to a genre list.
     #[serde(default)]
     categories: Vec<String>,
+    /// How many readers rated the volume; the ranking tiebreak between
+    /// equally good title matches.
+    #[serde(rename = "ratingsCount", default)]
+    ratings_count: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -318,6 +322,7 @@ fn map_volume(
         first_publish_year: None,
         genres: sanitize_genres(info.categories),
         relevance: None,
+        popularity: info.ratings_count.and_then(|n| u32::try_from(n).ok()),
     })
 }
 

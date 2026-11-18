@@ -22,16 +22,18 @@ fn record_starts_the_first_step_of_the_schedule() {
 }
 
 #[test]
-fn record_escalates_only_while_the_previous_cooldown_is_still_running() {
+fn record_does_not_escalate_for_a_refusal_that_lands_inside_a_running_cooldown() {
+    // A search's concurrent requests all pass the gate before any reply, so
+    // each of them records its own 429 for what is one refusal.
     let tracker = ThrottleTracker::fresh();
+    let hardcover = MetadataProvider::Hardcover;
     let now = Instant::now();
-    tracker.record_at(OL, None, now);
-    // A second 429 one second later, well inside the first cooldown.
-    let during = now + Duration::from_secs(1);
-    tracker.record_at(OL, None, during);
+    for _ in 0..10 {
+        tracker.record_at(hardcover, None, now);
+    }
     assert_eq!(
-        tracker.remaining_at(OL, during).expect("cooling down"),
-        Duration::from_secs(DEFAULT_SCHEDULE[1])
+        tracker.remaining_at(hardcover, now).expect("cooling down"),
+        Duration::from_secs(DEFAULT_SCHEDULE[0])
     );
 }
 
@@ -74,11 +76,14 @@ fn clear_is_what_puts_a_provider_back_on_the_first_step() {
 #[test]
 fn record_saturates_at_the_last_step_rather_than_running_off_the_schedule() {
     let tracker = ThrottleTracker::fresh();
-    let now = Instant::now();
+    let last = *DEFAULT_SCHEDULE.last().expect("schedule is non-empty");
+    let mut now = Instant::now();
     for _ in 0..DEFAULT_SCHEDULE.len() + 3 {
         tracker.record_at(OL, None, now);
+        // Past the longest step, so each refusal follows a lapsed cooldown.
+        now += Duration::from_secs(last + 1);
     }
-    let last = *DEFAULT_SCHEDULE.last().expect("schedule is non-empty");
+    now -= Duration::from_secs(last + 1);
     assert_eq!(
         tracker.remaining_at(OL, now).expect("cooling down"),
         Duration::from_secs(last)
@@ -137,11 +142,10 @@ fn record_still_escalates_when_the_provider_supplied_its_own_wait() {
     let tracker = ThrottleTracker::fresh();
     let now = Instant::now();
     tracker.record_at(OL, Some(Duration::from_secs(30)), now);
-    tracker.record_at(OL, None, now + Duration::from_secs(1));
+    let lapsed = now + Duration::from_secs(DEFAULT_SCHEDULE[0] + 1);
+    tracker.record_at(OL, None, lapsed);
     assert_eq!(
-        tracker
-            .remaining_at(OL, now + Duration::from_secs(1))
-            .expect("cooling down"),
+        tracker.remaining_at(OL, lapsed).expect("cooling down"),
         Duration::from_secs(DEFAULT_SCHEDULE[1])
     );
 }

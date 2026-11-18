@@ -2,8 +2,9 @@
 //! kept attributed and un-collapsed, and a per-source status so a caller can
 //! tell "nothing found" apart from "never asked" and "couldn't reach it".
 //!
-//! The sibling of [`super::climb`], not a replacement — check-in still wants
-//! one answer; the metadata editor's picker wants all of them.
+//! The sibling of [`super::climb`], not a replacement — ISBN check-in still
+//! wants one answer; the metadata editor's picker wants all of them. The title
+//! search reuses this fan-out and ranks what it returns.
 //!
 //! Each provider's answer is scored against the query before it is returned
 //! (see [`super::relevance`]), so a source that ranks a study guide first
@@ -30,9 +31,8 @@ const FANOUT_CONCURRENCY: usize = 6;
 
 /// Max candidates one provider may contribute, so a chatty source can't crowd
 /// the others out of the picker. Distinct from `super::SEARCH_LIMIT`, which
-/// sizes the *check-in* picker and also caps what each provider is asked for
-/// upstream, so it usually binds first; this is the backstop for a provider
-/// that answers with more than it was asked for.
+/// caps the title search's merged list and sizes what each provider is asked
+/// for upstream; this binds first, trimming each answer before the merge.
 pub const FANOUT_PROVIDER_LIMIT: usize = 10;
 
 /// Search every configured provider concurrently and return their candidates

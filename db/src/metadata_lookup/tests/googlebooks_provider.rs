@@ -553,3 +553,28 @@ async fn a_swallowed_bare_text_failure_still_leaves_the_cooldown_it_recorded() {
         "the refusal must outlive the Ok that swallowed it"
     );
 }
+
+#[tokio::test]
+async fn google_books_search_maps_ratings_count_to_popularity() {
+    let server = MockServer::start().await;
+    mount_gb(
+        &server,
+        json!({ "items": [
+            { "id": "rated", "volumeInfo": {
+                "title": "Effective Java", "ratingsCount": 57,
+                "industryIdentifiers": [{ "type": "ISBN_13", "identifier": ISBN13 }],
+            }},
+            { "id": "unrated", "volumeInfo": {
+                "title": "Effective Java",
+                "industryIdentifiers": [{ "type": "ISBN_13", "identifier": ISBN13 }],
+            }},
+        ]}),
+    )
+    .await;
+
+    let found = googlebooks::search(&config_for(&server), &title_query("effective java"))
+        .await
+        .unwrap();
+    assert_eq!(found[0].popularity, Some(57));
+    assert_eq!(found[1].popularity, None);
+}

@@ -20,9 +20,8 @@ use omnibus_shared::metadata_lookup::MetadataProvider;
 
 /// How long to wait after each successive 429, in seconds.
 ///
-/// Escalates only while a cooldown is *still running* — a 429 that arrives
-/// after the previous one lapsed starts again at the first step, since the
-/// provider evidently let us back in.
+/// Escalates once per cooldown that lapsed and was followed by another 429; a
+/// 429 that lands while a cooldown is still running does not step it.
 const DEFAULT_SCHEDULE: &[u64] = &[120, 300, 600, 1800, 3600];
 
 /// Google Books' free tier is a daily quota, not a per-minute rate: once it is
@@ -115,15 +114,18 @@ impl ThrottleTracker {
         now: Instant,
     ) {
         self.with(|map| {
-            // Escalates from the level already recorded, whether or not that
-            // cooldown has lapsed. Pruning the level on lapse made every
-            // schedule one step long: the gates mean a provider is never asked
-            // *during* a cooldown, so a second 429 can only ever arrive after
-            // one expired — and a level reset at that moment could never
-            // advance. The level is cleared by [`Self::clear`], on evidence
-            // that the provider is answering again.
+            // Escalates from the level already recorded once that cooldown has
+            // lapsed: the gates mean a provider is not asked afterwards, so a
+            // lapsed level reset could never advance. A refusal landing while
+            // the cooldown still runs is a concurrent request's reply to the
+            // same refusal, not a new one, so it keeps the level. The level is
+            // cleared by [`Self::clear`], on evidence the provider is answering.
             let previous = map.get(&provider).copied();
-            let level = previous.map_or(0, |c| c.level + 1);
+            let level = match previous {
+                None => 0,
+                Some(c) if c.until > now => c.level,
+                Some(c) => c.level + 1,
+            };
             let schedule = schedule_for(provider);
             let step = schedule[level.min(schedule.len() - 1)];
             // Capped: `Retry-After` is a provider-supplied number, and

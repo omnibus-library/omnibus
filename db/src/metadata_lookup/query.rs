@@ -9,9 +9,9 @@
 use omnibus_shared::isbn::normalize_isbn;
 
 /// What a caller knows about the book it is searching for. Every field is
-/// optional and independently useful: the check-in ladder searches with a title
-/// alone, the picker seeds title + author + any ISBN the edit form holds, and a
-/// retyped box gives a title-only query because free text can't be split.
+/// optional and independently useful: the check-in ISBN ladder searches with an
+/// ISBN alone, the picker seeds title + author + any ISBN the edit form holds,
+/// and a retyped box gives a title-only query because free text can't be split.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SearchQuery {
     /// The work's title, without the author appended.

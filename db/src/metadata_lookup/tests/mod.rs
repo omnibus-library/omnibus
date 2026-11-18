@@ -10,6 +10,7 @@ mod googlebooks_provider;
 mod hardcover_provider;
 mod hydrate;
 mod openlibrary_provider;
+mod title_merge;
 
 use std::time::Duration;
 
@@ -377,6 +378,20 @@ fn ol_search_hit() -> serde_json::Value {
     })
 }
 
+#[test]
+fn open_library_search_asks_for_the_readinglog_count() {
+    let url = openlibrary::search_url(&offline_config(None), &title_query(QUERY)).unwrap();
+    let fields = reqwest::Url::parse(&url)
+        .unwrap()
+        .query_pairs()
+        .find_map(|(k, v)| (k == "fields").then(|| v.into_owned()))
+        .unwrap();
+    assert!(
+        fields.split(',').any(|f| f == "readinglog_count"),
+        "{fields}"
+    );
+}
+
 fn gb_search_hit() -> serde_json::Value {
     json!({
         "totalItems": 2,
@@ -546,7 +561,7 @@ async fn search_by_title_reports_a_provider_error_when_open_library_is_last_and_
 }
 
 #[tokio::test]
-async fn resolving_open_library_editions_makes_no_request_and_files_no_work_isbn_while_it_is_throttled(
+async fn resolving_a_candidate_makes_no_request_and_files_no_work_isbn_while_its_provider_is_throttled(
 ) {
     let server = MockServer::start().await;
     mount_ol_editions(
@@ -573,9 +588,10 @@ async fn resolving_open_library_editions_makes_no_request_and_files_no_work_isbn
         first_publish_year: None,
         genres: Vec::new(),
         relevance: None,
+        popularity: None,
     };
 
-    let resolved = resolve_open_library_editions(&config, vec![work]).await;
+    let resolved = resolve_for_check_in(&config, work).await;
 
     assert!(resolved.is_err(), "a cooling-down lookup is not an answer");
     assert!(server.received_requests().await.unwrap().is_empty());
@@ -634,18 +650,6 @@ async fn search_by_title_falls_through_to_google_books_on_open_library_error() {
 }
 
 #[tokio::test]
-async fn search_by_title_prefers_google_books_when_a_key_is_configured() {
-    let server = MockServer::start().await;
-    mount_ol_search(&server, ol_search_hit()).await;
-    mount_gb_search(&server, gb_search_hit()).await;
-
-    let results = search_provider_by_title(&keyed_config_for(&server), QUERY)
-        .await
-        .unwrap();
-    assert_eq!(results[0].source, MetadataProvider::GoogleBooks);
-}
-
-#[tokio::test]
 async fn search_by_title_returns_empty_when_both_providers_are_empty() {
     let server = MockServer::start().await;
     mount_ol_search(&server, json!({ "docs": [] })).await;
@@ -697,29 +701,6 @@ async fn search_by_title_drops_a_rung_whose_answer_does_not_match_the_query() {
         .await
         .unwrap();
     assert!(results.is_empty(), "got {results:?}");
-}
-
-#[tokio::test]
-async fn search_by_title_caps_the_candidate_list() {
-    // Titles that actually answer QUERY — the ladder scores each rung now, so
-    // a fixture of unrelated titles would be filtered out and prove nothing
-    // about the cap.
-    let docs: Vec<serde_json::Value> = (0..20)
-        .map(|i| {
-            json!({
-                "title": format!("Effective Java, Printing {i}"),
-                // Distinct valid ISBN-13s: vary the payload, recompute the check digit.
-                "isbn": [with_check_digit(&format!("9780000000{i:02}"))],
-            })
-        })
-        .collect();
-    let server = MockServer::start().await;
-    mount_ol_search(&server, json!({ "docs": docs })).await;
-
-    let results = search_provider_by_title(&config_for(&server), QUERY)
-        .await
-        .unwrap();
-    assert_eq!(results.len(), SEARCH_LIMIT);
 }
 
 /// Recompute the EAN-13 check digit for a 12-digit prefix.

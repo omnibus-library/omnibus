@@ -25,6 +25,7 @@ fn candidate(title: &str, authors: &[&str]) -> ProviderEdition {
         first_publish_year: None,
         genres: Vec::new(),
         relevance: None,
+        popularity: None,
     }
 }
 
@@ -353,4 +354,107 @@ fn contains_word_keeps_scanning_past_a_non_boundary_hit() {
     // advanced by the needle's whole length would never examine it.
     assert!(contains_word("won on on", "on on"));
     assert!(!contains_word("wondrous", "on"));
+}
+
+// ── rank_merged ──────────────────────────────────────────────────
+
+/// A scored, authored candidate with a popularity, as the fan-out hands one over.
+fn ranked(title: &str, relevance: i32, popularity: Option<u32>) -> ProviderEdition {
+    ProviderEdition {
+        provider_ref: format!("isbn-row/{title}"),
+        relevance: Some(relevance),
+        popularity,
+        ..candidate(title, &["An Author"])
+    }
+}
+
+fn titles(editions: &[ProviderEdition]) -> Vec<&str> {
+    editions.iter().map(|e| e.title.as_str()).collect()
+}
+
+#[test]
+fn rank_merged_breaks_a_relevance_tie_by_popularity() {
+    let merged = vec![
+        ranked("obscure", 1000, Some(41)),
+        ranked("famous", 1000, Some(7912)),
+    ];
+    assert_eq!(titles(&rank_merged(merged)), ["famous", "obscure"]);
+}
+
+#[test]
+fn rank_merged_puts_an_authorless_candidate_below_authored_ones_in_its_tier() {
+    let authorless = ProviderEdition {
+        authors: Vec::new(),
+        ..ranked("authorless", 1000, Some(9999))
+    };
+    let merged = vec![authorless, ranked("authored", 1000, Some(1))];
+    assert_eq!(titles(&rank_merged(merged)), ["authored", "authorless"]);
+}
+
+#[test]
+fn rank_merged_keeps_a_higher_relevance_tier_above_a_more_popular_candidate() {
+    let merged = vec![
+        ranked("popular prefix", 800, Some(9999)),
+        ranked("quiet exact", 1000, None),
+    ];
+    assert_eq!(
+        titles(&rank_merged(merged)),
+        ["quiet exact", "popular prefix"]
+    );
+}
+
+#[test]
+fn rank_merged_drops_a_later_row_repeating_an_isbn() {
+    let first = ProviderEdition {
+        isbn13: Some("9780439023528".into()),
+        ..ranked("first", 1000, None)
+    };
+    let repeat = ProviderEdition {
+        isbn13: Some("9780439023528".into()),
+        ..ranked("repeat", 1000, None)
+    };
+    let no_isbn_a = ranked("no isbn a", 900, None);
+    let no_isbn_b = ranked("no isbn b", 900, None);
+    let merged = vec![first, repeat, no_isbn_a, no_isbn_b];
+    assert_eq!(
+        titles(&rank_merged(merged)),
+        ["first", "no isbn a", "no isbn b"]
+    );
+}
+
+#[test]
+fn rank_merged_keeps_an_open_library_work_that_shares_an_isbn_with_another_row() {
+    // A work's own `isbn` is one of every printing's, so it says nothing about
+    // which printing another provider's row is.
+    let isbn = Some("9780439023528".to_string());
+    let work = ProviderEdition {
+        provider_ref: "/works/OL1W".into(),
+        isbn13: isbn.clone(),
+        ..ranked("work", 1000, None)
+    };
+    let google = ProviderEdition {
+        isbn13: isbn,
+        ..ranked("google", 1000, None)
+    };
+    assert_eq!(titles(&rank_merged(vec![work, google])), ["work", "google"]);
+}
+
+#[test]
+fn filter_and_rank_keeps_a_popular_authored_match_the_provider_ranked_past_the_limit() {
+    // Providers rank for their own purposes, so the row that matters can sit
+    // past the cap among equally good title matches.
+    let query = SearchQuery::new(Some("Dune"), None, None);
+    let mut rows: Vec<ProviderEdition> = (0..10)
+        .map(|_| candidate("Dune", &["Frank Herbert"]))
+        .collect();
+    rows.push(ProviderEdition {
+        provider_ref: "/works/popular".into(),
+        popularity: Some(5000),
+        ..candidate("Dune", &["Frank Herbert"])
+    });
+
+    let kept = filter_and_rank(rows, &query, 10);
+
+    assert_eq!(kept.len(), 10);
+    assert_eq!(kept[0].provider_ref, "/works/popular");
 }

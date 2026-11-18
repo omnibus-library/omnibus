@@ -123,6 +123,10 @@ struct SearchDocument {
     image: Option<Image>,
     #[serde(default)]
     featured_series: Option<FeaturedSeries>,
+    /// How many readers shelved the work; the ranking tiebreak between
+    /// equally good title matches.
+    #[serde(default)]
+    users_count: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -308,6 +312,7 @@ fn map_search_document(doc: SearchDocument) -> Option<ProviderEdition> {
         first_publish_year: doc.release_year,
         genres: sanitize_genres(doc.genres),
         relevance: None,
+        popularity: doc.users_count.and_then(|n| u32::try_from(n).ok()),
     })
 }
 
@@ -425,6 +430,7 @@ fn map_book(b: BookRow, isbn13: Option<&str>) -> Option<ProviderEdition> {
         first_publish_year: None,
         genres: sanitize_genres(genre_tags(b.cached_tags)),
         relevance: None,
+        popularity: None,
     })
 }
 

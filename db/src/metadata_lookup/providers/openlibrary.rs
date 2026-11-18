@@ -130,6 +130,7 @@ pub async fn by_isbn(
         first_publish_year: None,
         genres: sanitize_genres(book.subjects.into_iter().flat_map(|s| s.name)),
         relevance: None,
+        popularity: None,
     }))
 }
 
@@ -174,6 +175,10 @@ struct OlSearchDoc {
     /// and the longest of the three providers'.
     #[serde(default)]
     subject: Vec<String>,
+    /// How many readers logged the work; the ranking tiebreak between
+    /// equally good title matches.
+    #[serde(default)]
+    readinglog_count: Option<i64>,
 }
 
 /// Build the search URL for a structured query. The query is user text, so it
@@ -203,7 +208,7 @@ pub(in crate::metadata_lookup) fn search_url(
     url.query_pairs_mut()
         .append_pair(
             "fields",
-            "key,title,author_name,first_publish_year,isbn,cover_i,number_of_pages_median,subject",
+            "key,title,author_name,first_publish_year,isbn,cover_i,number_of_pages_median,subject,readinglog_count",
         )
         .append_pair("limit", &SEARCH_LIMIT.to_string());
     Ok(url.into())
@@ -268,6 +273,7 @@ fn map_search_doc(doc: OlSearchDoc) -> Option<ProviderEdition> {
         first_publish_year: doc.first_publish_year,
         genres: sanitize_genres(doc.subject),
         relevance: None,
+        popularity: doc.readinglog_count.and_then(|n| u32::try_from(n).ok()),
     })
 }
 
@@ -592,6 +598,7 @@ pub async fn by_ref(
             .and_then(|y| y.parse().ok()),
         genres: sanitize_genres(record.subjects),
         relevance: None,
+        popularity: None,
     }))
 }
 
