@@ -34,7 +34,7 @@ jobs:
     outputs:
       e2e: ${{ steps.filter.outputs.e2e }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: dorny/paths-filter@v3
         id: filter
@@ -77,7 +77,7 @@ jobs:
     outputs:
       cache-key: ${{ steps.server-key.outputs.key }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Compute server cache key
         id: server-key
@@ -100,7 +100,7 @@ jobs:
 
       - name: Install Nix
         if: steps.server-cache.outputs.cache-hit != 'true'
-        uses: DeterminateSystems/nix-installer-action@v22
+        uses: DeterminateSystems/nix-installer-action@v23
 
       - name: Cache Nix store
         if: steps.server-cache.outputs.cache-hit != 'true'
@@ -156,7 +156,7 @@ jobs:
       CARGO_TARGET_DIR: ./target
       TOTAL_SHARDS: "2"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Public-domain fixtures aren't in git — they're the fixtures-vN
       # release asset. Cache them so shards/pushes don't re-download 156 MB;
@@ -177,7 +177,7 @@ jobs:
         run: scripts/fetch-fixtures.sh
 
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@v22
+        uses: DeterminateSystems/nix-installer-action@v23
 
       # Distinct nix cache from `rust.yml`'s `nix-rust-` so the two workflows
       # don't clobber each other; shared across e2e jobs via the prefix.
@@ -285,7 +285,7 @@ jobs:
       # failures still upload; best-effort, never gates the suite.
       - name: Upload test results to Codecov
         if: ${{ !cancelled() && hashFiles('ui_tests/playwright/results-*.xml') != '' }}
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7
         with:
           files: ui_tests/playwright/results-${{ matrix.shard }}.xml
           report_type: test_results

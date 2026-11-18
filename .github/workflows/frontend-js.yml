@@ -26,7 +26,7 @@ jobs:
     outputs:
       js: ${{ steps.filter.outputs.js }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: dorny/paths-filter@v3
         id: filter
@@ -54,10 +54,10 @@ jobs:
       id-token: write
       actions: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@v22
+        uses: DeterminateSystems/nix-installer-action@v23
 
       # Its own prefix so this and the other workflows don't evict each other.
       # The `.#e2e` shell carries the Chromium bundle the story tests run in.
@@ -113,7 +113,7 @@ jobs:
 
       - name: Upload test results to Codecov
         if: ${{ !cancelled() && hashFiles('frontend-js/results-*.xml') != '' }}
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7
         with:
           files: frontend-js/results-unit.xml,frontend-js/results-stories.xml
           report_type: test_results
@@ -124,7 +124,7 @@ jobs:
       # Codecov merges the two uploads under one flag.
       - name: Upload coverage to Codecov
         if: ${{ !cancelled() && hashFiles('frontend-js/coverage/*/lcov.info') != '' }}
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7
         with:
           files: frontend-js/coverage/unit/lcov.info,frontend-js/coverage/stories/lcov.info
           flags: frontend-js

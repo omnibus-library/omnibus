@@ -67,7 +67,7 @@ jobs:
 
       # On dispatch, check out the release tag; on a release event, github.ref
       # is already the tag ref.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.tag || github.ref }}
 

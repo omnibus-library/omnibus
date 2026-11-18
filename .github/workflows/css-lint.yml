@@ -45,7 +45,7 @@ jobs:
     outputs:
       css: ${{ steps.filter.outputs.css }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: dorny/paths-filter@v3
         id: filter
@@ -70,10 +70,10 @@ jobs:
       id-token: write
       actions: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@v22
+        uses: DeterminateSystems/nix-installer-action@v23
 
       # Distinct nix cache prefix from rust.yml/e2e.yml so the workflows
       # don't clobber each other. The slim shell realizes stylelint only.

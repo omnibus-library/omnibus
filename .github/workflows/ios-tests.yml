@@ -36,7 +36,7 @@ jobs:
     outputs:
       ios: ${{ steps.filter.outputs.ios }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: dorny/paths-filter@v3
         id: filter
@@ -59,7 +59,7 @@ jobs:
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Both come preinstalled on GitHub's macOS images today, but an image
       # refresh dropping one would otherwise fail this required check before
@@ -108,7 +108,7 @@ jobs:
       # the CODECOV_TOKEN repo secret to be reliable.
       - name: Upload coverage to Codecov
         if: ${{ !cancelled() && hashFiles('lcov-ios.info') != '' }}
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7
         with:
           files: ./lcov-ios.info
           flags: ios
@@ -119,7 +119,7 @@ jobs:
       # still upload (that's the point of the analytics); never gates the job.
       - name: Upload test results to Codecov
         if: ${{ !cancelled() && hashFiles('ios-test-results/junit.xml') != '' }}
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7
         with:
           files: ios-test-results/junit.xml
           report_type: test_results
@@ -135,7 +135,7 @@ jobs:
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Same determinism guard as the unit job.
       - name: Ensure jq + xcbeautify
@@ -176,7 +176,7 @@ jobs:
 
       - name: Upload test results to Codecov
         if: ${{ !cancelled() && hashFiles('ios-test-results/junit.xml') != '' }}
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7
         with:
           files: ios-test-results/junit.xml
           report_type: test_results
