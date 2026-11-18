@@ -5,7 +5,7 @@
 
 use omnibus_shared::metadata_lookup::MetadataProvider;
 use serde_json::json;
-use wiremock::matchers::{method, path, query_param};
+use wiremock::matchers::{method, path, path_regex, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use super::super::*;
@@ -263,4 +263,55 @@ async fn search_by_title_makes_no_edition_request_for_a_google_row_without_an_is
 
     assert!(results.is_empty(), "got {results:?}");
     assert_eq!(requests_to(&server, "/volumes/gbOther").await, 0);
+}
+
+#[tokio::test]
+async fn search_by_title_offers_google_rows_ranked_past_the_cap_when_the_capped_rows_fail_to_resolve(
+) {
+    let server = MockServer::start().await;
+    // 10 Open Library works and 10 Hardcover rows fill the 20 slots, and none
+    // of them resolves; 10 Google prefix matches rank below them.
+    let docs: Vec<_> = (1..=10)
+        .map(|work| {
+            json!({ "key": format!("/works/OL{work}W"), "title": HUNGER_GAMES,
+                    "author_name": ["Suzanne Collins"] })
+        })
+        .collect();
+    Mock::given(method("GET"))
+        .and(path_regex(r"^/works/OL\d+W/editions\.json$"))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&server)
+        .await;
+    mount_ol_title(&server, docs).await;
+    let hits: Vec<_> = (0..10)
+        .map(|i| {
+            let mut doc = hc_search_document();
+            doc["id"] = json!((900 + i).to_string());
+            doc["title"] = json!(HUNGER_GAMES);
+            json!({ "document": doc })
+        })
+        .collect();
+    mount_hc_search(&server, json!(hits)).await;
+    Mock::given(method("POST"))
+        .and(wiremock::matchers::body_string_contains(ID_QUERY_MARKER))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&server)
+        .await;
+    mount_gb_title(
+        &server,
+        (0..10)
+            .map(|i| gb_row(i, "The Hunger Games Companion", Some("Gb Author")))
+            .collect(),
+    )
+    .await;
+
+    let results = search_provider_by_title(&all_keyed_config_for(&server), HUNGER_GAMES)
+        .await
+        .unwrap();
+
+    assert_eq!(results.len(), 10, "got {results:?}");
+    assert!(results
+        .iter()
+        .all(|m| m.source == MetadataProvider::GoogleBooks));
+    assert_eq!(requests_to(&server, "editions.json").await, 10);
 }

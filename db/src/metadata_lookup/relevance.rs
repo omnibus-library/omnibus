@@ -359,7 +359,7 @@ pub fn filter_and_rank(
         return editions.into_iter().take(limit).collect();
     }
 
-    let mut scored: Vec<(f64, ProviderEdition)> = editions
+    let scored: Vec<(f64, ProviderEdition)> = editions
         .into_iter()
         .map(|e| (score_candidate(&e, query), e))
         // The skip-list is a heuristic about *titles*; an exact ISBN is a fact
@@ -370,32 +370,34 @@ pub fn filter_and_rank(
         .filter(|(score, _)| *score >= MIN_RELEVANCE_SCORE)
         .collect();
 
-    // Stable, so candidates that scored identically keep the order their
-    // provider returned them in rather than being shuffled.
-    scored.sort_by(|a, b| b.0.total_cmp(&a.0));
-    scored
+    let mut ranked: Vec<ProviderEdition> = scored
         .into_iter()
-        .take(limit)
         .map(|(score, mut e)| {
             e.relevance = Some(to_fixed_point(score));
             e
         })
-        .collect()
+        .collect();
+    ranked.sort_by_key(rank_key);
+    ranked.truncate(limit);
+    ranked
 }
 
-/// Order a merged pile of scored candidates from several providers: relevance
-/// tier first, then authored before authorless, then the more widely read; drop
-/// a row repeating an earlier ISBN-13, and cap. Stable, so full ties keep the
-/// order the providers answered in. An Open Library work's ISBN is one of every
-/// printing's, so works are not deduped here.
-pub fn rank_merged(mut editions: Vec<ProviderEdition>, limit: usize) -> Vec<ProviderEdition> {
-    editions.sort_by_key(|e| {
-        (
-            Reverse(e.relevance.unwrap_or(i32::MIN)),
-            e.authors.is_empty(),
-            Reverse(e.popularity),
-        )
-    });
+/// The one ordering every ranked list shares: relevance tier first, then
+/// authored before authorless, then the more widely read. Sorted with a stable
+/// sort, so full ties keep the order the provider answered in.
+fn rank_key(e: &ProviderEdition) -> (Reverse<i32>, bool, Reverse<Option<u32>>) {
+    (
+        Reverse(e.relevance.unwrap_or(i32::MIN)),
+        e.authors.is_empty(),
+        Reverse(e.popularity),
+    )
+}
+
+/// Order a merged pile of scored candidates from several providers by
+/// [`rank_key`] and drop a row repeating an earlier ISBN-13. An Open Library
+/// work's ISBN is one of every printing's, so works are not deduped here.
+pub fn rank_merged(mut editions: Vec<ProviderEdition>) -> Vec<ProviderEdition> {
+    editions.sort_by_key(rank_key);
     let mut seen = HashSet::new();
     editions
         .into_iter()
@@ -406,7 +408,6 @@ pub fn rank_merged(mut editions: Vec<ProviderEdition>, limit: usize) -> Vec<Prov
                     .as_ref()
                     .is_none_or(|isbn| seen.insert(isbn.clone()))
         })
-        .take(limit)
         .collect()
 }
 

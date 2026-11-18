@@ -89,7 +89,8 @@ pub async fn search_provider_by_title(
     query: &str,
 ) -> Result<Vec<ExternalBookMeta>, MetadataLookupError> {
     let searched = search_all_providers(config, &SearchQuery::from_text(query), None).await;
-    let rows = relevance::rank_merged(searched.editions, SEARCH_LIMIT);
+    let mut rows = relevance::rank_merged(searched.editions);
+    let unresolved = rows.split_off(rows.len().min(SEARCH_LIMIT));
     let resolved = futures::future::join_all(rows.into_iter().map(|row| async move {
         let source = row.source;
         (source, resolve_for_check_in(config, row).await)
@@ -109,7 +110,19 @@ pub async fn search_provider_by_title(
             Err(_) => {}
         }
     }
-    let metas = dedupe_by_isbn(metas);
+    let mut metas = dedupe_by_isbn(metas);
+    if metas.len() < SEARCH_LIMIT {
+        // Rows past the cap that already name an edition need no request, so a
+        // capped row that failed to resolve doesn't leave their slot empty.
+        metas.extend(
+            unresolved
+                .into_iter()
+                .filter(|row| !row.provider_ref.starts_with("/works/"))
+                .filter_map(|row| ExternalBookMeta::try_from(row).ok()),
+        );
+        metas = dedupe_by_isbn(metas);
+        metas.truncate(SEARCH_LIMIT);
+    }
     if !metas.is_empty() {
         return Ok(metas);
     }

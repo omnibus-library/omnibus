@@ -378,7 +378,7 @@ fn rank_merged_breaks_a_relevance_tie_by_popularity() {
         ranked("obscure", 1000, Some(41)),
         ranked("famous", 1000, Some(7912)),
     ];
-    assert_eq!(titles(&rank_merged(merged, 10)), ["famous", "obscure"]);
+    assert_eq!(titles(&rank_merged(merged)), ["famous", "obscure"]);
 }
 
 #[test]
@@ -388,7 +388,7 @@ fn rank_merged_puts_an_authorless_candidate_below_authored_ones_in_its_tier() {
         ..ranked("authorless", 1000, Some(9999))
     };
     let merged = vec![authorless, ranked("authored", 1000, Some(1))];
-    assert_eq!(titles(&rank_merged(merged, 10)), ["authored", "authorless"]);
+    assert_eq!(titles(&rank_merged(merged)), ["authored", "authorless"]);
 }
 
 #[test]
@@ -398,7 +398,7 @@ fn rank_merged_keeps_a_higher_relevance_tier_above_a_more_popular_candidate() {
         ranked("quiet exact", 1000, None),
     ];
     assert_eq!(
-        titles(&rank_merged(merged, 10)),
+        titles(&rank_merged(merged)),
         ["quiet exact", "popular prefix"]
     );
 }
@@ -417,19 +417,9 @@ fn rank_merged_drops_a_later_row_repeating_an_isbn() {
     let no_isbn_b = ranked("no isbn b", 900, None);
     let merged = vec![first, repeat, no_isbn_a, no_isbn_b];
     assert_eq!(
-        titles(&rank_merged(merged, 10)),
+        titles(&rank_merged(merged)),
         ["first", "no isbn a", "no isbn b"]
     );
-}
-
-#[test]
-fn rank_merged_caps_at_the_limit() {
-    let merged = vec![
-        ranked("a", 1000, None),
-        ranked("b", 900, None),
-        ranked("c", 800, None),
-    ];
-    assert_eq!(titles(&rank_merged(merged, 2)), ["a", "b"]);
 }
 
 #[test]
@@ -446,8 +436,25 @@ fn rank_merged_keeps_an_open_library_work_that_shares_an_isbn_with_another_row()
         isbn13: isbn,
         ..ranked("google", 1000, None)
     };
-    assert_eq!(
-        titles(&rank_merged(vec![work, google], 10)),
-        ["work", "google"]
-    );
+    assert_eq!(titles(&rank_merged(vec![work, google])), ["work", "google"]);
+}
+
+#[test]
+fn filter_and_rank_keeps_a_popular_authored_match_the_provider_ranked_past_the_limit() {
+    // Providers rank for their own purposes, so the row that matters can sit
+    // past the cap among equally good title matches.
+    let query = SearchQuery::new(Some("Dune"), None, None);
+    let mut rows: Vec<ProviderEdition> = (0..10)
+        .map(|_| candidate("Dune", &["Frank Herbert"]))
+        .collect();
+    rows.push(ProviderEdition {
+        provider_ref: "/works/popular".into(),
+        popularity: Some(5000),
+        ..candidate("Dune", &["Frank Herbert"])
+    });
+
+    let kept = filter_and_rank(rows, &query, 10);
+
+    assert_eq!(kept.len(), 10);
+    assert_eq!(kept[0].provider_ref, "/works/popular");
 }
