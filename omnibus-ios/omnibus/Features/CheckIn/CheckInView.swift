@@ -93,7 +93,7 @@ struct CheckInView: View {
 
     // MARK: - Scanning
 
-    /// Scrolls so `SEARCH_LIMIT` (8) result rows under a 300pt camera view
+    /// Scrolls so `SEARCH_LIMIT` (20) result rows under a 300pt camera view
     /// aren't clipped, and so the keyboard doesn't cover the fields.
     private var scannerSection: some View {
         ScrollView {

@@ -13,6 +13,8 @@
 //! a tie. Two non-obvious choices are called out on [`normalize_title_text`]
 //! and [`levenshtein`].
 
+use std::cmp::Reverse;
+use std::collections::HashSet;
 use std::sync::OnceLock;
 
 use omnibus_shared::isbn::normalize_isbn;
@@ -378,6 +380,30 @@ pub fn filter_and_rank(
             e.relevance = Some(to_fixed_point(score));
             e
         })
+        .collect()
+}
+
+/// Order a merged pile of scored candidates from several providers: relevance
+/// tier first, then authored before authorless, then the more widely read; drop
+/// a row repeating an earlier ISBN-13, and cap. Stable, so full ties keep the
+/// order the providers answered in.
+pub fn rank_merged(mut editions: Vec<ProviderEdition>, limit: usize) -> Vec<ProviderEdition> {
+    editions.sort_by_key(|e| {
+        (
+            Reverse(e.relevance.unwrap_or(i32::MIN)),
+            e.authors.is_empty(),
+            Reverse(e.popularity),
+        )
+    });
+    let mut seen = HashSet::new();
+    editions
+        .into_iter()
+        .filter(|e| {
+            e.isbn13
+                .as_ref()
+                .is_none_or(|isbn| seen.insert(isbn.clone()))
+        })
+        .take(limit)
         .collect()
 }
 

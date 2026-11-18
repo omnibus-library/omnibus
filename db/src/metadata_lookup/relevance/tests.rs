@@ -355,3 +355,78 @@ fn contains_word_keeps_scanning_past_a_non_boundary_hit() {
     assert!(contains_word("won on on", "on on"));
     assert!(!contains_word("wondrous", "on"));
 }
+
+// ── rank_merged ──────────────────────────────────────────────────
+
+/// A scored, authored candidate with a popularity, as the fan-out hands one over.
+fn ranked(title: &str, relevance: i32, popularity: Option<u32>) -> ProviderEdition {
+    ProviderEdition {
+        relevance: Some(relevance),
+        popularity,
+        ..candidate(title, &["An Author"])
+    }
+}
+
+fn titles(editions: &[ProviderEdition]) -> Vec<&str> {
+    editions.iter().map(|e| e.title.as_str()).collect()
+}
+
+#[test]
+fn rank_merged_breaks_a_relevance_tie_by_popularity() {
+    let merged = vec![
+        ranked("obscure", 1000, Some(41)),
+        ranked("famous", 1000, Some(7912)),
+    ];
+    assert_eq!(titles(&rank_merged(merged, 10)), ["famous", "obscure"]);
+}
+
+#[test]
+fn rank_merged_puts_an_authorless_candidate_below_authored_ones_in_its_tier() {
+    let authorless = ProviderEdition {
+        authors: Vec::new(),
+        ..ranked("authorless", 1000, Some(9999))
+    };
+    let merged = vec![authorless, ranked("authored", 1000, Some(1))];
+    assert_eq!(titles(&rank_merged(merged, 10)), ["authored", "authorless"]);
+}
+
+#[test]
+fn rank_merged_keeps_a_higher_relevance_tier_above_a_more_popular_candidate() {
+    let merged = vec![
+        ranked("popular prefix", 800, Some(9999)),
+        ranked("quiet exact", 1000, None),
+    ];
+    assert_eq!(
+        titles(&rank_merged(merged, 10)),
+        ["quiet exact", "popular prefix"]
+    );
+}
+
+#[test]
+fn rank_merged_drops_a_later_row_repeating_an_isbn() {
+    let first = ProviderEdition {
+        isbn13: Some("9780439023528".into()),
+        ..ranked("first", 1000, None)
+    };
+    let repeat = ProviderEdition {
+        isbn13: Some("9780439023528".into()),
+        ..ranked("repeat", 1000, None)
+    };
+    let no_isbn_a = ranked("no isbn a", 900, None);
+    let no_isbn_b = ranked("no isbn b", 900, None);
+    let merged = vec![first, repeat, no_isbn_a, no_isbn_b];
+    assert_eq!(
+        titles(&rank_merged(merged, 10)),
+        ["first", "no isbn a", "no isbn b"]
+    );
+}
+
+#[test]
+fn rank_merged_caps_at_the_limit() {
+    let merged = vec![
+        ranked("a", 1000, None),
+        ranked("b", 900, None),
+        ranked("c", 800, None),
+    ];
+    assert_eq!(titles(&rank_merged(merged, 2)), ["a", "b"]);
+}

@@ -55,10 +55,10 @@ async fn mount_hc_edition(server: &MockServer, book_id: Option<i64>) {
 ///
 /// Its `{title:` sibling went with the exact-title filter this provider used
 /// to send; text search now goes through `search` (see `SEARCH_QUERY_MARKER`).
-const ID_QUERY_MARKER: &str = "books(where: {id:";
+pub(super) const ID_QUERY_MARKER: &str = "books(where: {id:";
 
 /// A Hardcover `books` row, as both the id lookup and the title search return.
-fn hc_book() -> serde_json::Value {
+pub(super) fn hc_book() -> serde_json::Value {
     json!({
         "id": 42,
         "title": "Effective Java",
@@ -78,7 +78,7 @@ const SEARCH_QUERY_MARKER: &str = "query_type";
 /// the search endpoint answers with `author_names` / `featured_series` /
 /// `genres` where the `books` query answers with `contributions` /
 /// `book_series` / `cached_tags`, and its `id` is a **string**.
-fn hc_search_document() -> serde_json::Value {
+pub(super) fn hc_search_document() -> serde_json::Value {
     json!({
         "id": "42",
         "slug": "effective-java",
@@ -97,7 +97,7 @@ fn hc_search_document() -> serde_json::Value {
 }
 
 /// Mount the `search` endpoint with the given hit documents.
-async fn mount_hc_search(server: &MockServer, documents: serde_json::Value) {
+pub(super) async fn mount_hc_search(server: &MockServer, documents: serde_json::Value) {
     Mock::given(method("POST"))
         .and(wiremock::matchers::body_string_contains(
             SEARCH_QUERY_MARKER.to_string(),
@@ -112,7 +112,7 @@ async fn mount_hc_search(server: &MockServer, documents: serde_json::Value) {
         .await;
 }
 
-async fn mount_hc_books(server: &MockServer, marker: &str, books: serde_json::Value) {
+pub(super) async fn mount_hc_books(server: &MockServer, marker: &str, books: serde_json::Value) {
     Mock::given(method("POST"))
         .and(wiremock::matchers::body_string_contains(marker.to_string()))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
@@ -201,6 +201,22 @@ async fn hardcover_failure_never_surfaces_as_a_provider_outage() {
         .await
         .expect("a hardcover outage must not fail the lookup");
     assert!(meta.is_none());
+}
+
+#[tokio::test]
+async fn search_by_title_is_a_clean_miss_when_only_hardcover_fails() {
+    let server = MockServer::start().await;
+    mount_ol_search(&server, json!({ "docs": [] })).await;
+    mount_gb_search(&server, json!({ "totalItems": 0 })).await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&server)
+        .await;
+
+    let results = search_provider_by_title(&hardcover_config_for(&server), QUERY)
+        .await
+        .expect("a hardcover outage must not fail the search");
+    assert!(results.is_empty());
 }
 
 #[tokio::test]
