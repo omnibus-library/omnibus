@@ -361,6 +361,7 @@ fn contains_word_keeps_scanning_past_a_non_boundary_hit() {
 /// A scored, authored candidate with a popularity, as the fan-out hands one over.
 fn ranked(title: &str, relevance: i32, popularity: Option<u32>) -> ProviderEdition {
     ProviderEdition {
+        provider_ref: format!("isbn-row/{title}"),
         relevance: Some(relevance),
         popularity,
         ..candidate(title, &["An Author"])
@@ -429,4 +430,24 @@ fn rank_merged_caps_at_the_limit() {
         ranked("c", 800, None),
     ];
     assert_eq!(titles(&rank_merged(merged, 2)), ["a", "b"]);
+}
+
+#[test]
+fn rank_merged_keeps_an_open_library_work_that_shares_an_isbn_with_another_row() {
+    // A work's own `isbn` is one of every printing's, so it says nothing about
+    // which printing another provider's row is.
+    let isbn = Some("9780439023528".to_string());
+    let work = ProviderEdition {
+        provider_ref: "/works/OL1W".into(),
+        isbn13: isbn.clone(),
+        ..ranked("work", 1000, None)
+    };
+    let google = ProviderEdition {
+        isbn13: isbn,
+        ..ranked("google", 1000, None)
+    };
+    assert_eq!(
+        titles(&rank_merged(vec![work, google], 10)),
+        ["work", "google"]
+    );
 }

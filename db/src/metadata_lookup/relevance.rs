@@ -386,7 +386,8 @@ pub fn filter_and_rank(
 /// Order a merged pile of scored candidates from several providers: relevance
 /// tier first, then authored before authorless, then the more widely read; drop
 /// a row repeating an earlier ISBN-13, and cap. Stable, so full ties keep the
-/// order the providers answered in.
+/// order the providers answered in. An Open Library work's ISBN is one of every
+/// printing's, so works are not deduped here.
 pub fn rank_merged(mut editions: Vec<ProviderEdition>, limit: usize) -> Vec<ProviderEdition> {
     editions.sort_by_key(|e| {
         (
@@ -399,9 +400,11 @@ pub fn rank_merged(mut editions: Vec<ProviderEdition>, limit: usize) -> Vec<Prov
     editions
         .into_iter()
         .filter(|e| {
-            e.isbn13
-                .as_ref()
-                .is_none_or(|isbn| seen.insert(isbn.clone()))
+            let is_work = e.provider_ref.starts_with("/works/");
+            is_work
+                || e.isbn13
+                    .as_ref()
+                    .is_none_or(|isbn| seen.insert(isbn.clone()))
         })
         .take(limit)
         .collect()

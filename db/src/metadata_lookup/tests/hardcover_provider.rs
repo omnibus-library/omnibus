@@ -506,6 +506,24 @@ async fn hardcover_check_in_rung_is_a_clean_miss_when_the_edition_cannot_be_reso
 }
 
 #[tokio::test]
+async fn search_by_title_is_a_clean_miss_when_the_hardcover_edition_lookup_fails() {
+    let server = MockServer::start().await;
+    mount_ol_search(&server, json!({ "docs": [] })).await;
+    mount_gb_search(&server, json!({ "totalItems": 0 })).await;
+    mount_hc_search(&server, json!([{ "document": hc_search_document() }])).await;
+    Mock::given(method("POST"))
+        .and(wiremock::matchers::body_string_contains(ID_QUERY_MARKER))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&server)
+        .await;
+
+    let results = search_provider_by_title(&hardcover_config_for(&server), QUERY)
+        .await
+        .expect("a failed edition resolve is a miss, not an outage");
+    assert!(results.is_empty(), "got {results:?}");
+}
+
+#[tokio::test]
 async fn hardcover_429_records_a_cooldown() {
     // Hardcover surfaces its transport failure through `HardcoverError`, whose
     // `#[error(transparent)]` forwards `source()` past the `reqwest::Error` —

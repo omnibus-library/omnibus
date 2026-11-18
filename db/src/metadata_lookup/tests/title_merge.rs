@@ -242,3 +242,25 @@ async fn search_by_title_reports_a_provider_error_when_the_terminal_provider_is_
     assert!(matches!(result, Err(MetadataLookupError::Provider(_))));
     assert_eq!(requests_to(&server, GB_PATH).await, 0);
 }
+
+#[tokio::test]
+async fn search_by_title_makes_no_edition_request_for_a_google_row_without_an_isbn() {
+    let server = MockServer::start().await;
+    mount_ol_title(&server, Vec::new()).await;
+    mount_gb_title(
+        &server,
+        vec![json!({ "id": "gbOther", "volumeInfo": {
+            "title": HUNGER_GAMES,
+            "authors": ["Suzanne Collins"],
+            "industryIdentifiers": [{ "type": "OTHER", "identifier": "OCLC:123" }],
+        }})],
+    )
+    .await;
+
+    let results = search_provider_by_title(&config_for(&server), HUNGER_GAMES)
+        .await
+        .unwrap();
+
+    assert!(results.is_empty(), "got {results:?}");
+    assert_eq!(requests_to(&server, "/volumes/gbOther").await, 0);
+}

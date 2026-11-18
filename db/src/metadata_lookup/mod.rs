@@ -31,7 +31,9 @@ pub use search::{search_all_providers, FANOUT_PROVIDER_LIMIT};
 pub use throttle::ThrottleTracker;
 
 use omnibus_shared::isbn::{normalize_isbn, IsbnError};
-use omnibus_shared::metadata_lookup::{ExternalBookMeta, ProviderEdition, ProviderSearchStatus};
+use omnibus_shared::metadata_lookup::{
+    ExternalBookMeta, MetadataProvider, ProviderEdition, ProviderSearchStatus,
+};
 
 /// Max rows a title search returns, and the page size asked of each provider upstream.
 pub const SEARCH_LIMIT: usize = 20;
@@ -79,12 +81,9 @@ pub async fn search_provider_by_isbn(
 
 /// Search the providers by title text, the scan flow's fallback when the ISBN
 /// itself resolved nothing. Asks every configured provider once, ranks the
-/// merged answers (relevance, authored, most read), and resolves an edition for
-/// each of the top [`SEARCH_LIMIT`] only. `Ok(vec![])` when the providers
-/// answered and none matched; `Err` only when nothing came back and the last
-/// catalog (the ladder's terminal provider) failed or was cooling down, so a
-/// Hardcover outage never turns a miss into an error. Callers validate the
-/// query shape (`ScanSearchRequest::validate`) before this is reached.
+/// merged answers, and resolves an edition for the top [`SEARCH_LIMIT`] only.
+/// `Ok(vec![])` when the providers answered and none matched. Callers validate
+/// the query shape (`ScanSearchRequest::validate`) before this is reached.
 pub async fn search_provider_by_title(
     config: &MetadataLookupConfig,
     query: &str,
@@ -114,6 +113,9 @@ pub async fn search_provider_by_title(
     if !metas.is_empty() {
         return Ok(metas);
     }
+    // Empty: an error only when the last-resort catalog (the ladder's terminal
+    // provider) failed or is cooling down, so no other provider's outage, and
+    // Hardcover's never, turns a miss into one.
     let search_error = searched
         .sources
         .into_iter()
@@ -159,27 +161,19 @@ async fn climb(
             }
             continue;
         }
-        // Score every answer before accepting it: Hardcover's full-text search would
-        // otherwise hand back whatever a fuzzy engine ranked first as the one confident
-        // answer a reader files a physical copy against.
-        let answer = match providers::run(rung.provider, config, query)
-            .await
-            .map(|found| relevance::filter_and_rank(found, query, SEARCH_LIMIT))
-        {
-            Ok(found) if !found.is_empty() => narrow_for_check_in(config, found).await,
-            Ok(_) => Ok(Vec::new()),
-            Err(e) => Err(e),
-        };
-        match answer {
+        match providers::run(rung.provider, config, query).await {
             // The ladder hands callers the frozen check-in payload, not the
-            // picker's richer candidate — and a candidate with no ISBN is not
-            // something check-in can act on, so it is dropped rather than being
-            // given a blank one. `ExternalBookMeta`'s contract (and the iOS
-            // decoder that depends on it) stays frozen while the picker's loosens.
-            // A rung whose every candidate lacks an ISBN has nothing check-in
-            // can use, which is the same as a miss: keep walking.
-            Ok(narrowed) if !narrowed.is_empty() => return Ok(dedupe_by_isbn(narrowed)),
-            Ok(_) => {}
+            // picker's richer candidate; an ISBN lookup's candidate always
+            // names its edition, so nothing is dropped here.
+            Ok(found) => {
+                let narrowed: Vec<ExternalBookMeta> = found
+                    .into_iter()
+                    .filter_map(|e| ExternalBookMeta::try_from(e).ok())
+                    .collect();
+                if !narrowed.is_empty() {
+                    return Ok(narrowed);
+                }
+            }
             Err(e) => {
                 tracing::warn!("{:?} lookup failed, trying next: {e:#}", rung.provider);
                 if rung.terminal {
@@ -195,39 +189,13 @@ async fn climb(
     }
 }
 
-/// Narrow a rung's candidates to the check-in payload, resolving each one with
-/// [`resolve_for_check_in`]. `Err` only when nothing resolved and a lookup
-/// failed or the provider is cooling down, so an outage never reads as a miss.
-async fn narrow_for_check_in(
-    config: &MetadataLookupConfig,
-    found: Vec<ProviderEdition>,
-) -> anyhow::Result<Vec<ExternalBookMeta>> {
-    let resolved = futures::future::join_all(
-        found
-            .into_iter()
-            .map(|candidate| resolve_for_check_in(config, candidate)),
-    )
-    .await;
-    let mut metas = Vec::new();
-    let mut first_error = None;
-    for outcome in resolved {
-        match outcome {
-            Ok(meta) => metas.extend(meta),
-            Err(e) => first_error = first_error.or(Some(e)),
-        }
-    }
-    match first_error {
-        Some(e) if metas.is_empty() => Err(e),
-        _ => Ok(metas),
-    }
-}
-
 /// Turn one candidate into the check-in payload, which stores an ISBN per copy.
 /// A candidate that already names an edition passes through. An Open Library
 /// *work*, whose `isbn` list spans every printing, is resolved to one real
-/// edition; any other candidate without an ISBN (Hardcover's) is re-fetched by
-/// its handle. `Ok(None)` when there is nothing to file; `Err` when the lookup
-/// failed or the provider is cooling down, so an outage never reads as a miss.
+/// edition; a Hardcover row, whose search documents carry no ISBN, is re-fetched
+/// by its handle; any other row without an ISBN has nothing to file.
+/// `Ok(None)` when there is nothing to file; `Err` when an Open Library lookup
+/// failed or the provider is cooling down.
 async fn resolve_for_check_in(
     config: &MetadataLookupConfig,
     mut candidate: ProviderEdition,
@@ -235,6 +203,10 @@ async fn resolve_for_check_in(
     let is_work = candidate.provider_ref.starts_with("/works/");
     if !is_work && candidate.isbn13.is_some() {
         return Ok(ExternalBookMeta::try_from(candidate).ok());
+    }
+    // A re-read of a Google Books row would find the same identifiers.
+    if !is_work && candidate.source != MetadataProvider::Hardcover {
+        return Ok(None);
     }
     if let Some(remaining) = config.throttle.remaining(candidate.source) {
         anyhow::bail!(
@@ -244,13 +216,16 @@ async fn resolve_for_check_in(
         );
     }
     if !is_work {
-        return match providers::by_ref(candidate.source, config, &candidate.provider_ref).await {
-            Ok(detail) => Ok(detail.and_then(|d| ExternalBookMeta::try_from(d).ok())),
-            Err(e) => {
-                tracing::warn!("{:?} edition resolve failed: {e:#}", candidate.source);
-                Err(e)
-            }
-        };
+        // Best-effort: a failed resolve is the same miss as an unresolvable row.
+        return Ok(
+            match providers::by_ref(candidate.source, config, &candidate.provider_ref).await {
+                Ok(detail) => detail.and_then(|d| ExternalBookMeta::try_from(d).ok()),
+                Err(e) => {
+                    tracing::warn!("{:?} edition resolve failed: {e:#}", candidate.source);
+                    None
+                }
+            },
+        );
     }
     let edition = match providers::openlibrary::work_edition(config, &candidate.provider_ref).await
     {
@@ -274,13 +249,11 @@ async fn resolve_for_check_in(
 }
 
 /// Drop repeat editions (Google Books in particular answers the same ISBN
-/// more than once) and cap the picker's length, keeping first-seen order. A
-/// no-op on the ISBN path, which answers with at most one entry.
+/// more than once), keeping first-seen order.
 fn dedupe_by_isbn(results: Vec<ExternalBookMeta>) -> Vec<ExternalBookMeta> {
     let mut seen = std::collections::HashSet::new();
     results
         .into_iter()
         .filter(|m| seen.insert(m.isbn13.clone()))
-        .take(SEARCH_LIMIT)
         .collect()
 }
