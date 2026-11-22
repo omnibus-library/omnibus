@@ -4,8 +4,11 @@
 //  Hardware buttons — a steering wheel, AirPods — arrive as track or seek
 //  commands, and the track commands used to jump whole chapters. These pin that
 //  they all seek by the same intervals the on-screen skip buttons draw, and
-//  that one press sending two of them moves only once.
+//  that one press sending two of them moves only once. They also pin that Now
+//  Playing carries the chapter number and no chapter count, so the wheel's
+//  presses still arrive as track commands.
 
+import MediaPlayer
 import Testing
 
 @testable import omnibus
@@ -54,6 +57,21 @@ struct RemoteTransportTests {
 
     @Test func aCommandDuringTheHoldIsTheSamePress() {
         #expect(RemoteTransport.seekForward.isSamePress(as: .nextTrack, after: .milliseconds(-500)))
+    }
+
+    @Test func nowPlayingCarriesNoChapterCount() {
+        // A count turns a wheel press into a chapter command the system drops.
+        let info = AudioPlayer.nowPlayingChapterInfo(index: 2)
+        #expect(info[MPNowPlayingInfoPropertyChapterCount] == nil)
+    }
+
+    @Test func nowPlayingCarriesTheOneBasedChapterNumber() {
+        let info = AudioPlayer.nowPlayingChapterInfo(index: 2)
+        #expect(info[MPNowPlayingInfoPropertyChapterNumber] as? Int == 3)
+    }
+
+    @Test func nowPlayingCarriesNoChapterKeysWithoutAChapter() {
+        #expect(AudioPlayer.nowPlayingChapterInfo(index: nil).isEmpty)
     }
 }
 

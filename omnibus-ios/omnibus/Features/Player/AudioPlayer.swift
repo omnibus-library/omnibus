@@ -1375,10 +1375,7 @@ final class AudioPlayer {
             MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? rate : 0,
             MPNowPlayingInfoPropertyMediaType: MPNowPlayingInfoMediaType.audio.rawValue,
         ]
-        if let index = currentChapterIndex {
-            info[MPNowPlayingInfoPropertyChapterNumber] = index + 1
-            info[MPNowPlayingInfoPropertyChapterCount] = chapters.count
-        }
+        info.merge(Self.nowPlayingChapterInfo(index: currentChapterIndex)) { _, new in new }
         if let artwork = currentArtwork {
             info[MPMediaItemPropertyArtwork] = artwork
         }
@@ -1417,6 +1414,13 @@ final class AudioPlayer {
     ) -> MPNowPlayingPlaybackState {
         if isPlayingOrStarting { return .playing }
         return hasBook ? .paused : .stopped
+    }
+
+    /// The chapter number and never the count: given a count, the system turns a
+    /// steering wheel's next/previous into a chapter command no handler receives.
+    nonisolated static func nowPlayingChapterInfo(index: Int?) -> [String: Any] {
+        guard let index else { return [:] }
+        return [MPNowPlayingInfoPropertyChapterNumber: index + 1]
     }
 
     /// The book's artwork; not `isFinal` while it is the plate standing in
