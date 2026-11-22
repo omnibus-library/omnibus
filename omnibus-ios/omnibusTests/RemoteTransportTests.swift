@@ -6,6 +6,7 @@
 //  they all seek by the same intervals the on-screen skip buttons draw, and
 //  that one press sending two of them moves only once.
 
+import MediaPlayer
 import Testing
 
 @testable import omnibus
@@ -54,6 +55,21 @@ struct RemoteTransportTests {
 
     @Test func aCommandDuringTheHoldIsTheSamePress() {
         #expect(RemoteTransport.seekForward.isSamePress(as: .nextTrack, after: .milliseconds(-500)))
+    }
+
+    @Test func nowPlayingCarriesNoChapterCount() {
+        // A count turns a wheel press into a chapter command the system drops.
+        let info = AudioPlayer.nowPlayingChapterInfo(index: 2)
+        #expect(info[MPNowPlayingInfoPropertyChapterCount] == nil)
+    }
+
+    @Test func nowPlayingCarriesTheOneBasedChapterNumber() {
+        let info = AudioPlayer.nowPlayingChapterInfo(index: 2)
+        #expect(info[MPNowPlayingInfoPropertyChapterNumber] as? Int == 3)
+    }
+
+    @Test func nowPlayingCarriesNoChapterKeysWithoutAChapter() {
+        #expect(AudioPlayer.nowPlayingChapterInfo(index: nil).isEmpty)
     }
 }
 
