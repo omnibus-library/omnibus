@@ -111,6 +111,8 @@ template filled from the same `MPNowPlayingInfoCenter` info (chapter as title,
 chapter-scoped scrubber). Every remote seek command — track, skip or seek, since
 Apple doesn't document which a car's hardware buttons send — seeks −15 / +30;
 chapters change only from the on-screen ⏮ / ⏭ buttons and the Chapters list.
+Now Playing carries the chapter number but never the chapter count: a count
+turns a wheel's next / previous into a chapter command no handler receives.
 To see what a car sends, filter Console.app to the attached phone's
 `RemoteCommands` category: no line for a press means no seek handler saw it.
 

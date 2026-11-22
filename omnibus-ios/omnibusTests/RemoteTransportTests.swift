@@ -4,7 +4,9 @@
 //  Hardware buttons — a steering wheel, AirPods — arrive as track or seek
 //  commands, and the track commands used to jump whole chapters. These pin that
 //  they all seek by the same intervals the on-screen skip buttons draw, and
-//  that one press sending two of them moves only once.
+//  that one press sending two of them moves only once. They also pin that Now
+//  Playing carries the chapter number and no chapter count, so the wheel's
+//  presses still arrive as track commands.
 
 import MediaPlayer
 import Testing
